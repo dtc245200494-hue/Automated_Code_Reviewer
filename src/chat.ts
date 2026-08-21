@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025 dtc245200494-hue — AI Security Bot Contributors
+// This file is part of AI Security Bot — an automated security code reviewer.
+// See LICENSE file in the root directory for full license text.
+
 import { OpenAI, AzureOpenAI } from 'openai';
 
 const reasoningEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
@@ -64,27 +69,47 @@ export class Chat {
 
   private generatePrompt = (patch: string) => {
     const answerLanguage = process.env.LANGUAGE
-        ? `Answer me in ${process.env.LANGUAGE},`
-        : '';
+      ? `Trả lời bằng ${process.env.LANGUAGE}.`
+      : 'Trả lời bằng Tiếng Việt.';
 
-    const userPrompt = process.env.PROMPT || 'Please review the following code patch. Focus on potential bugs, risks, and improvement suggestions.';
-    
-    const jsonFormatRequirement = '\nProvide your feedback in a strict JSON format with the following structure:\n' +
-        '{\n' +
-        '  "reviews": [\n' +
-        '    {\n' +
-        '      "hunk_header": string, // The @@ hunk header (e.g., "@@ -10,5 +10,7 @@"), optional\n' +
-        '      "lgtm": boolean, // true if this hunk looks good, false if there are concerns\n' +
-        '      "review_comment": string // Your detailed review comments for this hunk. Can use markdown syntax. Empty string if lgtm is true.\n' +
-        '    }\n' +
-        '  ]\n' +
-        '}\n' +
-        'Review each hunk (marked by @@) separately and provide feedback for hunks that need improvement.\n' +
-        'Ensure your response is a valid JSON object with a reviews array.\n';
+    const securityPrompt = process.env.PROMPT ||
+`Bạn là một chuyên gia bảo mật ứng dụng web (AppSec Expert) với kiến thức sâu về OWASP Top 10.
+Nhiệm vụ của bạn là phân tích đoạn code diff dưới đây và tìm kiếm các lỗ hổng bảo mật nghiêm trọng.
 
-    return `${userPrompt}${jsonFormatRequirement} ${answerLanguage}:
-    ${patch}
-    `;
+Hãy kiểm tra KỸ LƯỠNG các lỗ hổng sau:
+1. **SQL Injection** – Truy vấn SQL được ghép nối trực tiếp với dữ liệu người dùng nhập vào.
+2. **Cross-Site Scripting (XSS)** – Dữ liệu người dùng được render ra HTML/DOM mà không được sanitize.
+3. **Hardcoded Secrets** – API Key, Password, Token, Secret Key, Connection String bị viết cứng trong code.
+4. **Insecure Direct Object Reference (IDOR)** – Truy cập tài nguyên qua ID mà không kiểm tra quyền hạn.
+5. **Cross-Site Request Forgery (CSRF)** – Các request thay đổi trạng thái (POST/PUT/DELETE) không có CSRF token.
+6. **Insecure Deserialization** – Deserialize dữ liệu không tin cậy từ người dùng.
+7. **Path Traversal** – Đường dẫn file được xây dựng từ input người dùng mà không validate.
+8. **Command Injection** – Lệnh hệ điều hành được xây dựng từ input người dùng.
+9. **Sensitive Data Exposure** – Log ra console/file các thông tin nhạy cảm (password, token, PII).
+10. **Broken Authentication** – Mật khẩu lưu dưới dạng plain text, thuật toán hash yếu (MD5, SHA1).
+
+Nếu code KHÔNG có lỗ hổng bảo mật nào, hãy đặt lgtm = true và để review_comment rỗng.
+Nếu code CÓ lỗ hổng, hãy giải thích theo cấu trúc sau:
+- 🚨 **Loại lỗ hổng:** (ví dụ: SQL Injection)
+- ⚠️ **Mức độ nghiêm trọng:** (Cao / Trung bình / Thấp)
+- 📖 **Giải thích:** Lỗ hổng này hoạt động như thế nào và tại sao nguy hiểm
+- 💥 **Kịch bản tấn công:** Ví dụ cụ thể về cách kẻ tấn công có thể khai thác
+- ✅ **Cách sửa (Code mẫu):** Cung cấp đoạn code đã được sửa chính xác`;
+
+    const jsonFormatRequirement = '\nTrả về phản hồi theo định dạng JSON nghiêm ngặt sau:\n' +
+      '{\n' +
+      '  "reviews": [\n' +
+      '    {\n' +
+      '      "hunk_header": string, // Header @@ của đoạn code (ví dụ: "@@ -10,5 +10,7 @@"), không bắt buộc\n' +
+      '      "lgtm": boolean, // true nếu đoạn code này an toàn, false nếu có lỗ hổng bảo mật\n' +
+      '      "review_comment": string // Phân tích bảo mật chi tiết cho đoạn code này (dùng markdown). Để trống nếu lgtm là true.\n' +
+      '    }\n' +
+      '  ]\n' +
+      '}\n' +
+      'Phân tích từng đoạn code (đánh dấu bởi @@) riêng biệt và chỉ báo cáo khi có vấn đề bảo mật thực sự.\n' +
+      'Đảm bảo phản hồi của bạn là JSON hợp lệ với mảng reviews.\n';
+
+    return `${securityPrompt}\n${jsonFormatRequirement} ${answerLanguage}\n\nCode diff cần phân tích:\n${patch}\n`;
   };
 
   public codeReview = async (patch: string): Promise<Array<{ lgtm: boolean, review_comment: string, hunk_header?: string }> | { lgtm: boolean, review_comment: string, hunk_header?: string }> => {

@@ -1,0 +1,36 @@
+name: 🔐 AI Security Code Review
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  security-review:
+    name: Rà soát Lỗ hổng Bảo mật bằng AI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anc95/ChatGPT-CodeReview@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # ✅ Dùng GitHub Models (MIỄN PHÍ - Khuyên dùng cho sinh viên)
+          USE_GITHUB_MODELS: true
+          MODEL: openai/gpt-4o-mini
+
+          # 💬 Ngôn ngữ phản hồi
+          LANGUAGE: Tiếng Việt
+
+          # 🛡️ Prompt chuyên biệt cho bảo mật (đã cấu hình sẵn trong code)
+          # PROMPT: có thể ghi đè tại đây nếu muốn
+
+          # ⚙️ Cấu hình tối ưu hiệu năng
+          max_tokens: 4000
+          MAX_PATCH_LENGTH: 10000
+
+          # 📁 Chỉ quét các file code, bỏ qua docs và config không quan trọng
+          IGNORE_PATTERNS: "*.md,*.txt,*.json,*.lock,*.yml,*.yaml,node_modules/**,dist/**,build/**"

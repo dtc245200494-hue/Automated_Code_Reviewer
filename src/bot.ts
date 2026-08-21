@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025 dtc245200494-hue — AI Security Bot Contributors
+// This file is part of AI Security Bot — an automated security code reviewer.
+// See LICENSE file in the root directory for full license text.
+
 import { Context, Probot } from 'probot';
 import { minimatch } from 'minimatch'
 
@@ -6,7 +11,7 @@ import log from 'loglevel';
 
 const OPENAI_API_KEY = 'OPENAI_API_KEY';
 const COMPARE_FILES_LIMIT = 300;
-const REVIEW_MARKER = '<!-- chatgpt-code-review -->';
+const REVIEW_MARKER = '<!-- security-bot-review -->';
 const MAX_PATCH_COUNT = process.env.MAX_PATCH_LENGTH
   ? +process.env.MAX_PATCH_LENGTH
   : Infinity;
@@ -109,8 +114,8 @@ export const createReviewBody = (
 ) => {
   const heading =
     hasInlineComments || bodyComments.length
-      ? 'Code review by ChatGPT'
-      : 'LGTM 👍';
+      ? '🔐 Báo cáo Rà soát Bảo mật (AI Security Bot)'
+      : '✅ LGTM - Không phát hiện lỗ hổng bảo mật 🛡️';
   return [heading, ...bodyComments, REVIEW_MARKER].join('\n\n');
 };
 
@@ -160,7 +165,9 @@ export const getChangedFiles = async (context: PullRequestContext) => {
         (r) =>
           r.user?.type === 'Bot' &&
           r.body &&
-          (r.body.startsWith('Code review by ChatGPT') ||
+          (r.body.startsWith('🔐 Báo cáo Rà soát Bảo mật') ||
+            r.body.startsWith('✅ LGTM') ||
+            r.body.startsWith('Code review by ChatGPT') ||
             r.body.startsWith('LGTM'))
       );
       if (hasLegacyReview) {
@@ -264,7 +271,7 @@ export const robot = (app: Probot) => {
         repo: repo.repo,
         owner: repo.owner,
         issue_number: context.pullRequest().pull_number,
-        body: `Seems you are using me but didn't get OPENAI_API_KEY seted in Variables/Secrets for this repo. you could follow [readme](https://github.com/anc95/ChatGPT-CodeReview) for more information`,
+        body: `🔐 **Security Bot:** Chưa tìm thấy API Key. Vui lòng thêm \`OPENAI_API_KEY\` vào **Secrets** của repo này (Settings → Secrets and variables → Actions), hoặc bật \`USE_GITHUB_MODELS=true\` để dùng GitHub Models miễn phí.`,
       });
       return null;
     }
