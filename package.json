@@ -1,17 +1,22 @@
 {
-  "name": "cr-bot",
+  "name": "ai-security-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "A Probot app",
-  "author": "anc95",
-  "license": "ISC",
+  "description": "Bot AI tự động rà soát lỗ hổng bảo mật code trên Pull Request (SQL Injection, XSS, Hardcoded Secrets, OWASP Top 10)",
+  "author": "dtc245200494-hue",
+  "license": "MIT",
   "type": "module",
-  "homepage": "https://github.com//",
+  "homepage": "https://github.com/dtc245200494-hue/Automated_Code_Reviewer",
   "keywords": [
-    "probot",
-    "github",
-    "probot-app",
-    "code review"
+    "security",
+    "code-review",
+    "owasp",
+    "github-actions",
+    "ai",
+    "llm",
+    "sql-injection",
+    "xss",
+    "probot"
   ],
   "scripts": {
     "start": "node -r dotenv/config ./dist/index.js",
