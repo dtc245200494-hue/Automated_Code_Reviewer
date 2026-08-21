@@ -179,10 +179,8 @@ Automated_Code_Reviewer/
 
 ---
 
-## 🙏 Credits
-
-Dự án được phát triển dựa trên nền tảng mã nguồn mở [anc95/ChatGPT-CodeReview](https://github.com/anc95/ChatGPT-CodeReview), được tùy biến chuyên sâu cho mục tiêu **rà soát bảo mật tự động theo chuẩn OWASP**.
-
 ## 📄 License
 
 [MIT](LICENSE) © 2025 dtc245200494-hue — AI Security Bot Contributors
+
+> Dự án này được phát hành theo giấy phép MIT. Xem file [LICENSE](./LICENSE) để biết thêm chi tiết.
