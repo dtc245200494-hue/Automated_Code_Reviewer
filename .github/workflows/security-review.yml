@@ -22,7 +22,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_ENDPOINT: https://api.groq.com/openai/v1
-          MODEL: llama-3.3-70b-versatile
+          MODEL: llama-3.1-8b-instant
           USE_GITHUB_MODELS: false
           LANGUAGE: Tiếng Việt
           max_tokens: 4000
