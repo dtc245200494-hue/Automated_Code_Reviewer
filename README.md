@@ -24,27 +24,73 @@ Hệ thống rà soát và phát hiện lỗ hổng bảo mật mã nguồn tự
 
 ## 🏗️ System Overview
 
-Hệ thống được thiết kế theo kiến trúc module hóa với luồng xử lý phân tích bảo mật khép kín:
+```mermaid
+flowchart TD
+    Frontend["🖥️ Web Dashboard UI<br>(HTML / CSS / JS)"]
+    Backend["⚙️ Backend Express Server"]
+    DB[("💾 OWASP Samples / Data")]
+    Engine["🤖 Dual Engine Scanner<br>(AI LLM + Heuristic Rules)"]
 
-`mermaid
-graph TD
-    A[Mã nguồn đầu vào] -->|1. Paste Code / 2. Upload Folder / 3. GitHub Repo URL| B[Web Dashboard UI]
-    B -->|HTTP REST API /api/scan| C[Backend Express Server]
-    C --> D{Bộ điều phối phân tích - Dual Engine}
-    D -->|Chế độ AI Online| E[Groq Cloud LLM / OpenAI API]
-    D -->|Chế độ Dự phòng Offline| F[Heuristic Rule Engine]
-    E --> G[Bộ định dạng JSON chuẩn OWASP]
-    F --> G
-    G --> H[Báo cáo chi tiết & Highlight dòng lỗi]
-    H -->|Hiển thị trực quan| B
-`
+    Frontend -->|"HTTP / REST API (/api/scan)"| Backend
+    Backend -->|"Read / Write Test Cases"| DB
+    Backend -->|"Dispatch Source Code"| Engine
+    Engine -->|"Return JSON Report"| Backend
+    Backend -->|"Highlight Issues and Results"| Frontend
+
+    classDef default fill:#161b22,stroke:#30363d,color:#f0f6fc;
+    classDef highlight fill:#21262d,stroke:#58a6ff,color:#79c0ff;
+    class Frontend,Backend,DB,Engine highlight;
+```
+
+<details>
+<summary><b>📄 Mã nguồn sơ đồ PlantUML (dùng để vẽ lại hoặc đưa vào báo cáo)</b></summary>
+
+```plantuml
+@startuml
+skinparam Monochrome true
+skinparam DefaultTextAlignment center
+skinparam ArrowColor #444444
+skinparam DefaultFontName "Segoe UI"
+skinparam shadowing false
+
+skinparam rectangle {
+    BackgroundColor #F3F0FF
+    BorderColor #7C3AED
+    FontColor #333333
+}
+
+skinparam database {
+    BackgroundColor #F3F0FF
+    BorderColor #7C3AED
+    FontColor #333333
+}
+
+title Kiến trúc hệ thống - Automated Code Reviewer
+
+rectangle "🖥️ Web Dashboard UI
+(HTML / CSS / JS)" as Frontend
+rectangle "⚙️ Backend Express Server" as Backend
+database "💾 OWASP Samples / Data" as DB
+rectangle "🤖 Dual Engine Scanner
+(AI LLM + Heuristic Rules)" as Engine
+
+Frontend --> Backend: HTTP / REST API (/api/scan)
+Backend --> DB: Read / Write Test Cases
+Backend --> Engine: Dispatch Source Code
+Engine --> Backend: Return JSON Report
+Backend --> Frontend: Highlight Issues & Results
+
+@enduml
+```
+</details>
 
 ### Các thành phần chính:
-- **Presentation Layer (Frontend UI)**: Giao diện Cyber Dark theme với bố cục Split Layout độc lập, quản lý cây thư mục, đồng bộ số dòng code và bôi đỏ neon trực quan (public/).
-- **Application Server (Backend)**: Máy chủ Express xử lý API endpoints (/api/scan, /api/github/fetch-repo, /api/status), quản lý nạp repo Git từ xa (services/github.js).
-- **Dual-Engine Security Core**:
-  - **AI Live Engine**: Prompt Engineering chuyên sâu đánh số dòng [L1] ... [L45] kết hợp mô hình LLM (openai/gpt-oss-120b) phân tích ngữ cảnh luồng dữ liệu.
-  - **Heuristic Rule Engine**: Bộ quét luật độc lập dựa trên nhận dạng mẫu độc hại, hoạt động tức thì kể cả khi mất mạng (services/scanner.js).
+- **Web Dashboard UI (Frontend)**: Giao diện trực quan (Cyber Dark theme, Split Layout VS Code) cho phép dán mã nguồn, tải thư mục dự án và quét trực tiếp kho lưu trữ GitHub qua URL.
+- **Backend Express Server**: Đóng vai trò làm trung tâm điều phối, tiếp nhận yêu cầu từ Frontend, giao tiếp với cơ sở dữ liệu mẫu thử nghiệm và nạp dữ liệu từ xa (services/github.js).
+- **OWASP Samples / Data**: Thư viện chứa các kịch bản kiểm thử mẫu về lỗ hổng bảo mật phổ biến để người dùng kiểm tra tức thì.
+- **Dual Engine Scanner**:
+  - **AI Live Engine**: Sử dụng Prompt Engineering chuyên sâu kết hợp mô hình LLM (openai/gpt-oss-120b, Groq Cloud / OpenAI) phân tích ngữ cảnh luồng dữ liệu.
+  - **Heuristic Rule Engine**: Phân tích tĩnh dựa trên các mẫu nhận dạng lỗ hổng bảo mật, hoạt động độc lập ngay cả khi không có kết nối mạng.
 
 ---
 
