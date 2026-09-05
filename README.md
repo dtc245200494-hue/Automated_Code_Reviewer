@@ -92,21 +92,9 @@ Automated_Code_Reviewer/
 
 ---
 
-## 📜 Giấy phép & Bản quyền (License)
+## 📜 Open-Source License
 
-Dự án này là Phần mềm Mã Nguồn Mở (PMMN), được phát hành và bảo hộ theo **[Giấy phép MIT (MIT License)](./LICENSE)** — một giấy phép mã nguồn mở chính thức được phê duyệt bởi **Tổ chức Sáng kiến Nguồn Mở (OSI - Open Source Initiative)**.
+Project-owned source code is licensed under the [MIT License](https://github.com/dtc245200494-hue/Automated_Code_Reviewer/blob/main/LICENSE). Third-party libraries, services, and model assets remain subject to their respective terms; see [NOTICE](https://github.com/dtc245200494-hue/Automated_Code_Reviewer/blob/main/NOTICE) and [THIRD_PARTY_NOTICES.md](https://github.com/dtc245200494-hue/Automated_Code_Reviewer/blob/main/THIRD_PARTY_NOTICES.md).
 
-- **Bản sao toàn văn giấy phép**: Xem chi tiết tại tệp [LICENSE](./LICENSE) ở thư mục gốc của dự án.
-- **Mục đích cấp phép**: Cho phép mọi cá nhân, tổ chức được tự do sử dụng, sao chép, sửa đổi, hợp nhất, xuất bản, phân phối và thương mại hóa mà không có bất kỳ hạn chế nào, với điều kiện giữ nguyên thông báo bản quyền và thông báo cấp phép.
-- **Định danh trong từng tệp mã (SPDX-License-Identifier)**: Mọi tệp mã nguồn chính của dự án (server.js, services/scanner.js, services/github.js, data/samples.js, public/app.js) đều được gắn tiêu đề bản quyền chuẩn hóa:
-  ```javascript
-  /**
-   * AI Security Code Reviewer & Web Scanner
-   * SPDX-License-Identifier: MIT
-   * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
-   *
-   * Licensed under the MIT License (OSI-approved).
-   * See LICENSE file in the project root for full license information.
-   */
-  ```
-- **Tính tương thích giấy phép**: Dự án sử dụng 100% các thư viện có giấy phép tương thích hoàn toàn với MIT (MIT/ISC/Apache-2.0), không chứa mã nguồn xung đột hoặc vi phạm bản quyền.
+> [!IMPORTANT]
+> **AI Security Bot** là một công cụ hỗ trợ rà soát và nâng cao nhận thức bảo mật trong quy trình phát triển phần mềm (DevSecOps). Hệ thống không thay thế hoàn toàn quy trình đánh giá an ninh mạng chuyên sâu, kiểm thử xâm nhập thực tế (Penetration Testing) hoặc các chứng chỉ kiểm định an toàn thông tin chuyên nghiệp.
