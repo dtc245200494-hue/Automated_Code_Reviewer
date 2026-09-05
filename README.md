@@ -10,35 +10,21 @@
 
 ---
 
-## 📑 BẢNG THÔNG TIN SẢN PHẨM & ĐÁP ỨNG TIÊU CHÍ ĐÁNH GIÁ (PoF)
-
-| Tiêu chí PoF | Hiện trạng dự án | Đường dẫn kiểm chứng |
-| :--- | :--- | :--- |
-| **1. Quản lý mã nguồn trên Internet (5đ)** | Kho mã nguồn công khai trên GitHub, có đầy đủ Web Viewer, lịch sử commit minh bạch. | [GitHub Repository](https://github.com/dtc245200494-hue/Automated_Code_Reviewer) |
-| **2. Cấp phép PMMN chuẩn OSI-approved (10đ)** | Giấy phép **MIT License** (OSI-approved), có bản sao toàn văn LICENSE, có định danh SPDX trong từng file code. | [LICENSE](./LICENSE) |
-| **3. Phát hành phiên bản - Release (5đ)** | Có các bản phát hành chính thức theo Semantic Versioning (2.0.0), định dạng nén chuẩn .tar.gz & .zip. | [GitHub Releases](https://github.com/dtc245200494-hue/Automated_Code_Reviewer/releases) |
-| **4. Cài đặt & Dịch từ mã nguồn (10đ)** | 100% công cụ nguồn mở tiêu chuẩn (Node.js, 
-pm), cấu hình qua file .env, hoạt động độc lập bất kỳ thư mục nào. | [Hướng dẫn cài đặt](#-hướng-dẫn-cài-đặt--chạy-từ-mã-nguồn-building-from-source) |
-| **5. Quản lý thư viện & Gói đính kèm (10đ)** | Khai báo chuẩn qua package.json, không sửa mã nguồn thư viện thứ ba, không bundle file nhị phân độc quyền. | [package.json](./package.json) |
-| **6. Tài liệu, Bug Tracker & Changelog (10đ)** | Có README.md hướng dẫn chi tiết, CHANGELOG.md theo chuẩn Keep a Changelog, quản lý lỗi qua GitHub Issues. | [CHANGELOG.md](./CHANGELOG.md) & [GitHub Issues](https://github.com/dtc245200494-hue/Automated_Code_Reviewer/issues) |
-
----
-
-## 🎯 1. GIỚI THIỆU & TÍNH NGUYÊN GỐC CỦA GIẢI PHÁP (ORIGINALITY)
+## 🎯 1. GIỚI THIỆU DỰ ÁN
 
 ### 💡 Bối cảnh & Vấn đề
 Trong quy trình phát triển phần mềm hiện đại (DevSecOps), việc phát hiện sớm các lỗ hổng bảo mật trước khi đưa lên môi trường Production là cực kỳ cấp thiết. Các công cụ SAST truyền thống (SonarQube, Snyk, Bandit) thường:
 - Dựa trên quy tắc tĩnh cứng nhắc (Regex, AST Pattern), dẫn đến **tỷ lệ dương tính giả (False Positive) rất cao**.
-- Không hiểu được ngữ cảnh kinh doanh (Business Logic Flaws) hoặc luồng dữ liệu phức tạp.
+- Không hiểu được ngữ cảnh logic mã nguồn (Business Logic Flaws) hoặc luồng dữ liệu phức tạp.
 - Chỉ đưa ra cảnh báo khô khan bằng tiếng Anh, lập trình viên mới/sinh viên khó hiểu được bản chất và cách sửa.
 
-### 🌟 Giải pháp sáng tạo của AI Security Bot
+### 🌟 Tính năng nổi bật
 1. **Phân tích ngữ cảnh sâu bằng Large Language Model (LLM)**: Kết hợp mô hình ngôn ngữ lớn (openai/gpt-oss-120b, Groq Cloud, GitHub Models) để đọc hiểu logic mã nguồn, xác định chính xác đường đi của dữ liệu từ nguồn không tin cậy.
 2. **Động cơ phân tích kép (Dual-Engine Architecture)**:
    - **AI Live Engine**: Đưa ra phân tích chuyên sâu, kịch bản tấn công (PoC) và mã vá mẫu (Remediation) hoàn toàn bằng **Tiếng Việt**.
    - **Heuristic Rule Engine**: Hoạt động dự phòng độc lập, phân tích siêu tốc mà không cần kết nối mạng hoặc API Key.
-3. **Trải nghiệm lập trình viên (Developer Experience - DX) trực quan**:
-   - Giao diện **Split Layout độc lập (chuẩn phong cách VS Code)**: Khung code và khung báo cáo cuộn riêng biệt, không bị che khuất.
+3. **Giao diện trực quan phong cách VS Code**:
+   - Giao diện **Split Layout độc lập**: Khung code và khung báo cáo cuộn riêng biệt, không bị che khuất.
    - **Đánh số dòng và bôi đỏ trực quan (Line-level Highlighting)**: Nút **🔍 Xem ngay dòng X ➔** giúp lập trình viên định vị và nhảy ngay tới dòng lỗi kèm hiệu ứng ánh sáng Neon.
    - Quét trực tiếp nguyên cả kho lưu trữ GitHub bất kỳ thông qua URL chỉ với 1 cú nhấp chuột.
 
@@ -60,9 +46,9 @@ Hệ thống tập trung rà soát và khắc phục các nhóm lỗ hổng nguy
 
 ---
 
-## 💻 3. HƯỚNG DẪN CÀI ĐẶT & CHẠY TỪ MÃ NGUỒN (BUILDING FROM SOURCE)
+## 💻 3. HƯỚNG DẪN CÀI ĐẶT & KHỞI CHẠY
 
-Dự án sử dụng 100% các công cụ nguồn mở tiêu chuẩn, không phụ thuộc vào bất kỳ phần mềm đóng gói nguồn đóng nào.
+Dự án sử dụng 100% công cụ nguồn mở tiêu chuẩn, không phụ thuộc vào bất kỳ phần mềm đóng gói nguồn đóng nào.
 
 ### 3.1. Yêu cầu môi trường
 - **Node.js**: Phiên bản >= 18.0.0 (LTS khuyến nghị)
@@ -79,7 +65,7 @@ cd Automated_Code_Reviewer
 # 2. Cài đặt các thư viện phụ thuộc nguồn mở
 npm install
 
-# 3. Cấu hình biến môi trường trước khi chạy (Configuration prior to building/running)
+# 3. Cấu hình biến môi trường trước khi chạy
 cp .env.example .env
 `
 
@@ -105,7 +91,7 @@ Truy cập ứng dụng tại trình duyệt: **http://localhost:3000**
 
 ---
 
-## 📦 4. DANH MỤC THƯ VIỆN & QUẢN LÝ PHỤ THUỘC (DEPENDENCY MANAGEMENT)
+## 📦 4. DANH MỤC THƯ VIỆN & QUẢN LÝ PHỤ THUỘC
 
 Dự án chỉ sử dụng các thư viện chuẩn nguồn mở được cộng đồng kiểm định, không can thiệp hay sửa đổi mã nguồn của các gói đính kèm:
 - **express (v4.19.2)**: Khung ứng dụng Web HTTP tối giản, ổn định và hiệu năng cao.
@@ -115,7 +101,7 @@ Dự án chỉ sử dụng các thư viện chuẩn nguồn mở được cộng
 
 ---
 
-## 🤖 5. KHẢ NĂNG TÍCH HỢP AI (AI INTEGRATION)
+## 🤖 5. KHẢ NĂNG TÍCH HỢP AI
 
 1. **Prompt Engineering chuyên sâu**:
    - Hệ thống truyền mã nguồn được đánh chỉ số dòng cụ thể [L1] ... [L45] giúp AI định vị chuẩn xác dòng lỗi đến từng ký tự.
@@ -126,7 +112,7 @@ Dự án chỉ sử dụng các thư viện chuẩn nguồn mở được cộng
 
 ---
 
-## 📁 6. CẤU TRÚC DỰ ÁN (PROJECT STRUCTURE)
+## 📁 6. CẤU TRÚC DỰ ÁN
 
 `
 Automated_Code_Reviewer/
