@@ -1,3 +1,11 @@
+﻿/**
+ * AI Security Code Reviewer & Web Scanner
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
+ *
+ * Licensed under the MIT License (OSI-approved).
+ * See LICENSE file in the project root for full license information.
+ */
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
