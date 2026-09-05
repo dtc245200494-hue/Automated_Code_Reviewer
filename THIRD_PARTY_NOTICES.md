@@ -37,3 +37,9 @@ Below are the notices and license texts required by their respective creators:
 - **License & Terms**: Groq Cloud Platform Terms of Service
 - **Model**: openai/gpt-oss-120b
 - **URL**: https://groq.com/
+
+
+---
+
+## 6. License Compatibility Verification
+All third-party libraries listed above use permissive open-source licenses (MIT, BSD-2-Clause, Apache-2.0) that are fully compatible with the primary MIT License of this project. There are no restrictive Copyleft licenses (GPL/AGPL) present, ensuring complete freedom and compatibility for distribution and integration.
