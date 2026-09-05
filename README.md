@@ -20,6 +20,34 @@ Hệ thống rà soát và phát hiện lỗ hổng bảo mật mã nguồn tự
 
 ---
 
+---
+
+## 🏗️ System Overview
+
+Hệ thống được thiết kế theo kiến trúc module hóa với luồng xử lý phân tích bảo mật khép kín:
+
+`mermaid
+graph TD
+    A[Mã nguồn đầu vào] -->|1. Paste Code / 2. Upload Folder / 3. GitHub Repo URL| B[Web Dashboard UI]
+    B -->|HTTP REST API /api/scan| C[Backend Express Server]
+    C --> D{Bộ điều phối phân tích - Dual Engine}
+    D -->|Chế độ AI Online| E[Groq Cloud LLM / OpenAI API]
+    D -->|Chế độ Dự phòng Offline| F[Heuristic Rule Engine]
+    E --> G[Bộ định dạng JSON chuẩn OWASP]
+    F --> G
+    G --> H[Báo cáo chi tiết & Highlight dòng lỗi]
+    H -->|Hiển thị trực quan| B
+`
+
+### Các thành phần chính:
+- **Presentation Layer (Frontend UI)**: Giao diện Cyber Dark theme với bố cục Split Layout độc lập, quản lý cây thư mục, đồng bộ số dòng code và bôi đỏ neon trực quan (public/).
+- **Application Server (Backend)**: Máy chủ Express xử lý API endpoints (/api/scan, /api/github/fetch-repo, /api/status), quản lý nạp repo Git từ xa (services/github.js).
+- **Dual-Engine Security Core**:
+  - **AI Live Engine**: Prompt Engineering chuyên sâu đánh số dòng [L1] ... [L45] kết hợp mô hình LLM (openai/gpt-oss-120b) phân tích ngữ cảnh luồng dữ liệu.
+  - **Heuristic Rule Engine**: Bộ quét luật độc lập dựa trên nhận dạng mẫu độc hại, hoạt động tức thì kể cả khi mất mạng (services/scanner.js).
+
+---
+
 ## 🛡️ Danh mục lỗ hổng hỗ trợ (OWASP Top 10)
 
 - **SQL Injection**: Ghép chuỗi truy vấn dữ liệu thô.
