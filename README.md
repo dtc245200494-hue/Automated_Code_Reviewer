@@ -83,7 +83,9 @@ Automated_Code_Reviewer/
 ├── legacy-bot-action/       # Module bot cho GitHub Actions (lưu trữ)
 ├── .env.example             # File cấu hình môi trường mẫu
 ├── CHANGELOG.md             # Lịch sử các phiên bản
-├── LICENSE                  # Giấy phép nguồn mở MIT
+├── LICENSE                  # Giấy phép nguồn mở MIT (OSI-approved)
+├── NOTICE                   # Thông báo quyền sở hữu & bản quyền thành phần
+├── THIRD_PARTY_NOTICES.md   # Danh mục giấy phép của các thư viện bên thứ ba
 ├── package.json             # Khai báo dependencies (thư viện Node.js)
 └── server.js                # Entrypoint của ứng dụng Web (file chạy chính)
 ```

@@ -1,0 +1,10 @@
+AI Security Code Reviewer & Web Scanner
+Copyright (c) 2025-2026 dtc245200494-hue & Contributors
+
+This product includes software developed by dtc245200494-hue and open-source contributors.
+
+This project incorporates third-party open-source components under their respective licenses:
+- Express (MIT License) - Copyright (c) StrongLoop, Inc., and other expressjs.com contributors
+- OpenAI Node SDK (Apache License 2.0) - Copyright (c) OpenAI
+- dotenv (BSD-2-Clause License) - Copyright (c) 2015, Mot Dotla
+- cors (MIT License) - Copyright (c) 2013 Troy Goode <troygoode@gmail.com>
