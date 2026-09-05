@@ -42,48 +42,6 @@ flowchart TD
     class Frontend,Backend,DB,Engine highlight;
 ```
 
-<details>
-<summary><b>📄 Mã nguồn sơ đồ PlantUML (dùng để vẽ lại hoặc đưa vào báo cáo)</b></summary>
-
-```plantuml
-@startuml
-skinparam Monochrome true
-skinparam DefaultTextAlignment center
-skinparam ArrowColor #444444
-skinparam DefaultFontName "Segoe UI"
-skinparam shadowing false
-
-skinparam rectangle {
-    BackgroundColor #F3F0FF
-    BorderColor #7C3AED
-    FontColor #333333
-}
-
-skinparam database {
-    BackgroundColor #F3F0FF
-    BorderColor #7C3AED
-    FontColor #333333
-}
-
-title Kiến trúc hệ thống - Automated Code Reviewer
-
-rectangle "🖥️ Web Dashboard UI
-(HTML / CSS / JS)" as Frontend
-rectangle "⚙️ Backend Express Server" as Backend
-database "💾 OWASP Samples / Data" as DB
-rectangle "🤖 Dual Engine Scanner
-(AI LLM + Heuristic Rules)" as Engine
-
-Frontend --> Backend: HTTP / REST API (/api/scan)
-Backend --> DB: Read / Write Test Cases
-Backend --> Engine: Dispatch Source Code
-Engine --> Backend: Return JSON Report
-Backend --> Frontend: Highlight Issues & Results
-
-@enduml
-```
-</details>
-
 ### Các thành phần chính:
 - **Web Dashboard UI (Frontend)**: Giao diện trực quan (Cyber Dark theme, Split Layout VS Code) cho phép dán mã nguồn, tải thư mục dự án và quét trực tiếp kho lưu trữ GitHub qua URL.
 - **Backend Express Server**: Đóng vai trò làm trung tâm điều phối, tiếp nhận yêu cầu từ Frontend, giao tiếp với cơ sở dữ liệu mẫu thử nghiệm và nạp dữ liệu từ xa (services/github.js).
