@@ -95,8 +95,18 @@ OPENAI_API_KEY=your_openai_api_key
 USE_GITHUB_MODELS=true
 ```
 
-### Bước 3: Chạy Bot
+### Bước 3: Chạy Bot & Giao diện Web Dashboard
 
+#### Cách A: Chạy Web Dashboard trực quan (Khuyên dùng)
+```bash
+cd web
+npm install
+npm start
+# Mở trình duyệt truy cập: http://localhost:3000
+```
+*Tính năng Web Dashboard:* Dán code quét trực tiếp, tải thư mục từ máy tính, quét nguyên repo GitHub bất kỳ, bôi đỏ dòng code lỗi theo OWASP Top 10.
+
+#### Cách B: Chạy Bot GitHub App CI/CD
 ```bash
 # Chạy với pm2 (production)
 npm install -g pm2
