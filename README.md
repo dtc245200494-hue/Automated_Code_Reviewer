@@ -42,51 +42,51 @@ Hệ thống rà soát và phát hiện lỗ hổng bảo mật mã nguồn tự
 ### Các bước thực hiện
 
 1. **Clone repository**:
-   `ash
+   ```bash
    git clone https://github.com/dtc245200494-hue/Automated_Code_Reviewer.git
    cd Automated_Code_Reviewer
-   `
+   ```
 
 2. **Cài đặt thư viện**:
-   `ash
+   ```bash
    npm install
-   `
+   ```
 
 3. **Cấu hình môi trường**:
    Tạo file .env từ file mẫu .env.example:
-   `ash
+   ```bash
    cp .env.example .env
-   `
-   Cấu hình thông tin API (nếu có):
-   `env
+   ```
+   Cấu hình thông tin API trong file .env:
+   ```env
    GROQ_API_KEY=your_groq_api_key
    MODEL=openai/gpt-oss-120b
    WEB_PORT=3000
-   `
+   ```
    *(Nếu không cấu hình API Key, hệ thống sẽ tự động sử dụng Heuristic Engine để phân tích).*
 
 4. **Khởi động ứng dụng**:
-   `ash
+   ```bash
    npm start
-   `
+   ```
    Mở trình duyệt tại: **http://localhost:3000**
 
 ---
 
 ## 📁 Cấu trúc thư mục
 
-`
+```text
 Automated_Code_Reviewer/
-├── data/                  # Mẫu kiểm tra bảo mật (OWASP Samples)
-├── public/                # Giao diện Web (HTML, CSS, JS)
-├── services/              # Bộ xử lý AI Scanner và GitHub API
-├── legacy-bot-action/     # Module bot cho GitHub Actions (lưu trữ)
-├── .env.example           # File cấu hình môi trường mẫu
-├── CHANGELOG.md           # Lịch sử các phiên bản
-├── LICENSE                # Giấy phép nguồn mở MIT
-├── package.json           # Khai báo dependencies
-└── server.js              # Entrypoint của ứng dụng Web
-`
+├── data/                    # Mẫu kiểm tra bảo mật (OWASP Samples)
+├── public/                  # Giao diện Web (HTML, CSS, JS)
+├── services/                # Bộ xử lý AI Scanner và GitHub API
+├── legacy-bot-action/       # Module bot cho GitHub Actions (lưu trữ)
+├── .env.example             # File cấu hình môi trường mẫu
+├── CHANGELOG.md             # Lịch sử các phiên bản
+├── LICENSE                  # Giấy phép nguồn mở MIT
+├── package.json             # Khai báo dependencies (thư viện Node.js)
+└── server.js                # Entrypoint của ứng dụng Web (file chạy chính)
+```
 
 ---
 
@@ -96,7 +96,7 @@ Dự án này là Phần mềm Mã Nguồn Mở (PMMN), được phát hành và
 
 - **Bản sao toàn văn giấy phép**: Xem chi tiết tại tệp [LICENSE](./LICENSE) ở thư mục gốc của dự án.
 - **Mục đích cấp phép**: Cho phép mọi cá nhân, tổ chức được tự do sử dụng, sao chép, sửa đổi, hợp nhất, xuất bản, phân phối và thương mại hóa mà không có bất kỳ hạn chế nào, với điều kiện giữ nguyên thông báo bản quyền và thông báo cấp phép.
-- **Định danh trong từng tệp mã (SPDX-License-Identifier)**: Mọi tệp mã nguồn chính của dự án (`server.js`, `services/scanner.js`, `services/github.js`, `data/samples.js`, `public/app.js`) đều được gắn tiêu đề bản quyền chuẩn hóa:
+- **Định danh trong từng tệp mã (SPDX-License-Identifier)**: Mọi tệp mã nguồn chính của dự án (server.js, services/scanner.js, services/github.js, data/samples.js, public/app.js) đều được gắn tiêu đề bản quyền chuẩn hóa:
   ```javascript
   /**
    * AI Security Code Reviewer & Web Scanner
