@@ -180,8 +180,8 @@ YÊU CẦU ĐỊNH DẠNG TRẢ VỀ (JSON duy nhất):
       "affected_lines": "Trích nguyên văn dòng code gặp vấn đề tại dòng đó",
       "explanation": "Giải thích chi tiết tại sao đoạn code này lại nguy hiểm",
       "attack_scenario": "Kịch bản mẫu kẻ tấn công có thể khai thác cụ thể (payload ví dụ)",
-      "remediation": "Hướng dẫn cách khắc phục triệt để",
-      "fixed_code": "Đoạn code đã được sửa an toàn hoàn chỉnh"
+      "remediation": "Hướng dẫn cách khắc phục triệt để và hợp lý trong thực tế",
+      "fixed_code": "Đoạn code đã được sửa an toàn hoàn chỉnh và chuẩn cú pháp (CHÚ Ý: Nếu code có thẻ HTML như <strong>, <br> thì KHÔNG ĐƯỢC hướng dẫn gán vào textContent vì sẽ làm vỡ giao diện; thay vào đó hãy hướng dẫn ép kiểu số parseInt/Number, escape input hoặc dùng DOMPurify.sanitize)"
     }
   ],
   "recommendations": [
@@ -221,8 +221,8 @@ YÊU CẦU ĐỊNH DẠNG TRẢ VỀ (JSON duy nhất):
       "affected_lines": "Dòng code lỗi",
       "explanation": "Giải thích chi tiết nguy hiểm",
       "attack_scenario": "Kịch bản khai thác",
-      "remediation": "Cách khắc phục",
-      "fixed_code": "Đoạn code đã sửa an toàn"
+      "remediation": "Cách khắc phục hợp lý trong thực tế",
+      "fixed_code": "Đoạn code đã sửa an toàn chuẩn thực tế (nếu có thẻ HTML không gán thô vào textContent mà hãy ép kiểu số hoặc sanitize)"
     }
   ],
   "recommendations": []
