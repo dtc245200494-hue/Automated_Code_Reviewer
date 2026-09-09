@@ -36,6 +36,13 @@ const folderInput = document.getElementById('folderInput');
 
 const lineCount = document.getElementById('lineCount');
 const charCount = document.getElementById('charCount');
+const toggleEditBtn = document.getElementById('toggleEditBtn');
+const toggleEditText = document.getElementById('toggleEditText');
+const exportCodeBtn = document.getElementById('exportCodeBtn');
+const exportReportBtn = document.getElementById('exportReportBtn');
+let isEditMode = false;
+let currentActiveReport = null; // Lưu báo cáo hiện tại để xuất file
+
 const resultsContainer = document.getElementById('resultsContainer');
 const aiStatusBadge = document.getElementById('aiStatusBadge');
 const resultMeta = document.getElementById('resultMeta');
@@ -427,6 +434,75 @@ function setupEventListeners() {
 
   scanBtn.addEventListener('click', handleScan);
   scanAllFolderBtn.addEventListener('click', handleScanAllFolder);
+
+  // Bật / Tắt chế độ Chỉnh sửa mã nguồn
+  if (toggleEditBtn) {
+    toggleEditBtn.addEventListener('click', () => {
+      isEditMode = !isEditMode;
+      if (isEditMode) {
+        codeEditor.style.display = 'block';
+        codeViewer.style.display = 'none';
+        toggleEditBtn.classList.add('active-edit');
+        if (toggleEditText) toggleEditText.textContent = 'Đang sửa';
+        codeEditor.focus();
+      } else {
+        // Tắt chế độ sửa, quay lại xem viewer (nếu có báo cáo phân tích trước đó)
+        toggleEditBtn.classList.remove('active-edit');
+        if (toggleEditText) toggleEditText.textContent = 'Chỉnh sửa';
+        if (currentActiveReport && currentActiveReport.vulnerabilities) {
+          renderCodeViewerWithHighlights(codeEditor.value, currentActiveReport.vulnerabilities);
+        } else {
+          renderCodeViewerWithHighlights(codeEditor.value, []);
+        }
+      }
+    });
+  }
+
+  // Xuất file mã nguồn hiện tại về máy (.js, .py, .php, .html,...)
+  if (exportCodeBtn) {
+    exportCodeBtn.addEventListener('click', () => {
+      const code = codeEditor.value;
+      if (!code || !code.trim()) {
+        alert('Không có nội dung mã nguồn để xuất file.');
+        return;
+      }
+
+      // Xác định tên file phù hợp
+      let filename = 'source_code';
+      if (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]) {
+        const fullPath = uploadedFiles[activeFileIndex].path || uploadedFiles[activeFileIndex].name;
+        filename = fullPath.split('/').pop().split('\\').pop();
+      } else {
+        const lang = languageSelect.value || 'javascript';
+        const extMap = {
+          'javascript': 'js',
+          'python': 'py',
+          'html': 'html',
+          'php': 'php',
+          'java': 'java',
+          'sql': 'sql',
+          'typescript': 'ts',
+          'go': 'go',
+          'csharp': 'cs'
+        };
+        const ext = extMap[lang] || 'txt';
+        filename = `fixed_code_${Date.now()}.${ext}`;
+      }
+
+      downloadBlobFile(code, filename, 'text/plain;charset=utf-8');
+    });
+  }
+
+  // Xuất Báo cáo Bảo mật (Markdown & JSON)
+  if (exportReportBtn) {
+    exportReportBtn.addEventListener('click', () => {
+      if (!currentActiveReport) {
+        alert('Chưa có dữ liệu báo cáo để xuất.');
+        return;
+      }
+      exportSecurityReport();
+    });
+  }
 
   // GitHub Modal Events
   openGitModalBtn.addEventListener('click', () => {
@@ -1122,6 +1198,13 @@ function restoreHistorySingleFile(index) {
 
 // Reset giao diện kết quả
 function resetResults() {
+  currentActiveReport = null;
+  if (exportReportBtn) exportReportBtn.style.display = 'none';
+  if (toggleEditBtn) {
+    isEditMode = true;
+    toggleEditBtn.classList.remove('active-edit');
+    if (toggleEditText) toggleEditText.textContent = 'Chỉnh sửa';
+  }
   if (codeEditor && codeViewer) {
     codeEditor.style.display = 'block';
     codeViewer.style.display = 'none';
@@ -1321,6 +1404,9 @@ function renderError(message) {
 
 // Render Báo cáo kết quả
 function renderReport(result, duration) {
+  currentActiveReport = result;
+  if (exportReportBtn) exportReportBtn.style.display = 'inline-flex';
+
   const isSafe = result.is_safe;
   const vulns = result.vulnerabilities || [];
   const recs = result.recommendations || [];
@@ -1576,4 +1662,70 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// Tải file dạng Blob về máy người dùng
+function downloadBlobFile(content, filename, mimeType = 'text/plain;charset=utf-8') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Xuất báo cáo bảo mật chi tiết dạng Markdown (.md)
+function exportSecurityReport() {
+  if (!currentActiveReport) return;
+
+  const rep = currentActiveReport;
+  const fileName = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex])
+    ? (uploadedFiles[activeFileIndex].path || uploadedFiles[activeFileIndex].name)
+    : currentFileTitle.textContent || 'source_code';
+
+  const vulns = rep.vulnerabilities || [];
+  const recs = rep.recommendations || [];
+
+  let md = `# 🛡️ BÁO CÁO ĐÁNH GIÁ BẢO MẬT MÃ NGUỒN (SECURITY AUDIT REPORT)\n\n`;
+  md += `- **Mục tiêu phân tích**: \`${fileName}\`\n`;
+  md += `- **Thời gian xuất**: ${new Date().toLocaleString('vi-VN')}\n`;
+  md += `- **Trạng thái**: ${rep.is_safe ? '✅ AN TOÀN (Safe)' : `🚨 PHÁT HIỆN ${vulns.length} LỖ HỔNG`}\n`;
+  md += `- **Công cụ thẩm định**: ${rep.source === 'ai_live' ? `AI Engine (${rep.model_used})` : 'Heuristic Engine'}\n\n`;
+
+  md += `## 📌 Tóm tắt tổng quan\n${rep.overall_summary || 'N/A'}\n\n`;
+
+  if (vulns.length > 0) {
+    md += `## 🚨 Danh sách chi tiết các lỗ hổng (${vulns.length})\n\n`;
+    vulns.forEach((v, i) => {
+      md += `### ${i + 1}. [${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}\n`;
+      md += `- **Danh mục OWASP**: ${v.owasp_category || 'OWASP Top 10'}\n`;
+      if (v.line_number) md += `- **Dòng code bị lỗi**: Dòng ${v.line_number}\n`;
+      if (v.affected_lines) {
+        md += `\n**Đoạn code bị ảnh hưởng:**\n\`\`\`\n${v.affected_lines}\n\`\`\`\n`;
+      }
+      if (v.explanation) md += `\n**Giải thích cơ chế nguy hiểm:**\n${v.explanation}\n`;
+      if (v.attack_scenario) md += `\n**Kịch bản tấn công (PoC):**\n${v.attack_scenario}\n`;
+      if (v.remediation) md += `\n**Hướng khắc phục:**\n${v.remediation}\n`;
+      if (v.fixed_code) {
+        md += `\n**Code mẫu đã vá an toàn:**\n\`\`\`\n${v.fixed_code}\n\`\`\`\n`;
+      }
+      md += `\n---\n\n`;
+    });
+  }
+
+  if (recs.length > 0) {
+    md += `## 💡 Khuyến nghị củng cố bảo mật\n\n`;
+    recs.forEach((r, i) => {
+      const text = (typeof r === 'string') ? r : (r?.recommendation || JSON.stringify(r));
+      md += `${i + 1}. ${text}\n`;
+    });
+    md += `\n`;
+  }
+
+  const safeReportName = fileName.replace(/[/\\?%*:|"<>]/g, '_');
+  const reportFilename = `Security_Report_${safeReportName}_${Date.now()}.md`;
+  downloadBlobFile(md, reportFilename, 'text/markdown;charset=utf-8');
 }
