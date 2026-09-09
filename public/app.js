@@ -1298,7 +1298,12 @@ function renderReport(result, duration) {
       <div class="rec-box">
         <h4>💡 Khuyến nghị tăng cường bảo mật:</h4>
         <ul>
-          ${recs.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+          ${recs.map(r => {
+            const text = (typeof r === 'string') 
+              ? r 
+              : (r?.recommendation || r?.title || r?.desc || r?.description || r?.text || JSON.stringify(r));
+            return `<li>${escapeHtml(text)}</li>`;
+          }).join('')}
         </ul>
       </div>
     `;

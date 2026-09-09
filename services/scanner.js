@@ -259,8 +259,17 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
         }
       }
 
-      // Lọc trùng khuyến nghị
-      const uniqueRecs = Array.from(new Set(aggregatedRecommendations));
+      // Lọc trùng và chuẩn hóa khuyến nghị (nếu AI trả về object {title, description} thì trích xuất text)
+      const formattedRecs = [];
+      aggregatedRecommendations.forEach(rec => {
+        if (typeof rec === 'string' && rec.trim()) {
+          formattedRecs.push(rec.trim());
+        } else if (typeof rec === 'object' && rec !== null) {
+          const text = rec.recommendation || rec.title || rec.desc || rec.description || rec.text || JSON.stringify(rec);
+          if (text) formattedRecs.push(text);
+        }
+      });
+      const uniqueRecs = Array.from(new Set(formattedRecs));
 
       return {
         is_safe: aggregatedVulns.length === 0,
