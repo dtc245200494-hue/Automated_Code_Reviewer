@@ -146,10 +146,15 @@ export class ScannerService {
     return `Bạn là một chuyên gia An toàn thông tin và Đánh giá mã nguồn (AppSec Expert & Code Auditor) với chuyên môn sâu về OWASP Top 10.
 Nhiệm vụ của bạn là phân tích đoạn mã nguồn dưới đây (ngôn ngữ: ${language}) và rà soát mọi lỗ hổng bảo mật tiềm ẩn.
 
+QUY TẮC ĐẶC BIỆT KHI PHÂN TÍCH HTML / CSS / STATIC TEMPLATE:
+- Nếu ngôn ngữ là HTML hoặc mã nguồn chỉ là HTML/CSS tĩnh, cấu trúc giao diện, thẻ HTML bình thường, văn bản mẫu, hoặc không có mã script độc hại (không có inline script thực thi dữ liệu người dùng không kiểm soát, không có unescaped payload): BẮT BUỘC coi là AN TOÀN ("is_safe": true, "vulnerabilities": []).
+- KHÔNG ĐƯỢC báo lỗi XSS trên các thẻ HTML thông thường như <div>, <p>, <form>, <input>, <script src="..."> thư viện tin cậy. Chỉ báo XSS khi có dấu hiệu chèn trực tiếp dữ liệu người dùng không qua lọc/escape vào ngữ cảnh JavaScript thực thi được.
+- Đảm bảo tính nhất quán tuyệt đối giữa các lần quét: chỉ báo lỗi khi có bằng chứng lỗ hổng rõ ràng.
+
 DANH MỤC LỖ HỔNG CẦN CHÚ Ý ĐẶC BIỆT (OWASP Top 10):
 1. SQL Injection / NoSQL Injection
-2. Cross-Site Scripting (XSS)
-3. Hardcoded Secrets (API Key, Mật khẩu, JWT Token, Private Key)
+2. Cross-Site Scripting (XSS) (Chỉ báo khi có chèn biến độc hại vào DOM hoặc script thực thi)
+3. Hardcoded Secrets (API Key, Mật khẩu, JWT Token, Private Key thật)
 4. Insecure Direct Object Reference (IDOR)
 5. Cross-Site Request Forgery (CSRF)
 6. Insecure Deserialization
@@ -198,7 +203,10 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
     return `Bạn là một chuyên gia An toàn thông tin và Đánh giá mã nguồn (AppSec Expert & Code Auditor) với chuyên môn sâu về OWASP Top 10.
 Nhiệm vụ của bạn là phân tích đoạn mã nguồn dưới đây (ngôn ngữ: ${language}) từ dòng [L${startLineNumber}] đến dòng [L${startLineNumber + chunkLines.length - 1}] và rà soát mọi lỗ hổng bảo mật tiềm ẩn.
 
-DANH MỤC LỖ HỔNG CẦN CHÚ Ý: SQLi, XSS, Hardcoded Secrets, IDOR, CSRF, Command Injection, Path Traversal, Auth/Session bypass.
+QUY TẮC ĐẶC BIỆT KHI PHÂN TÍCH HTML / CSS / STATIC TEMPLATE:
+- Nếu mã nguồn chỉ là HTML/CSS thông thường, template tĩnh, văn bản mẫu, KHÔNG có mã độc hại: BẮT BUỘC coi là AN TOÀN ("is_safe": true, "vulnerabilities": []). Không báo lỗi XSS trên thẻ HTML thông thường.
+
+DANH MỤC LỖ HỔNG CẦN CHÚ Ý: SQLi, XSS thực sự, Hardcoded Secrets, IDOR, CSRF, Command Injection, Path Traversal, Auth/Session bypass.
 
 YÊU CẦU ĐỊNH DẠNG TRẢ VỀ (JSON duy nhất):
 {
@@ -252,7 +260,7 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
           const res = await activeClient.chat.completions.create({
             model: activeModel,
             messages: [{ role: 'user', content: prompt }],
-            temperature: 0.2,
+            temperature: 0.0,
             response_format: { type: "json_object" }
           });
 
@@ -300,7 +308,7 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
           const res = await assignedClient.chat.completions.create({
             model: activeModel,
             messages: [{ role: 'user', content: prompt }],
-            temperature: 0.2,
+            temperature: 0.0,
             response_format: { type: "json_object" }
           });
 
@@ -369,8 +377,11 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
     const codeLower = code.toLowerCase();
     const vulnerabilities = [];
 
-    // SQLi check
-    if (codeLower.includes('select ') && (code.includes('f"') || code.includes("f'") || code.includes(' + ') || code.includes('${') || code.includes('?'))) {
+    // Nếu là file HTML thuần hoặc không có mã thực thi độc hại
+    const isPureHtml = language === 'html' || codeLower.startsWith('<!doctype html') || (codeLower.includes('<html') && !codeLower.includes('innerhtml') && !codeLower.includes('<script>'));
+
+    // SQLi check (chỉ cho file backend/code)
+    if (!isPureHtml && codeLower.includes('select ') && (code.includes('f"') || code.includes("f'") || code.includes(' + ') || code.includes('${') || code.includes('?'))) {
       if (!code.includes('?')) {
         const lines = code.split('\n');
         const lineIdx = lines.findIndex(l => l.toLowerCase().includes('select') && (l.includes('+') || l.includes('$') || l.includes('f"') || l.includes("f'")));
@@ -389,8 +400,8 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
       }
     }
 
-    // XSS check
-    if (codeLower.includes('innerhtml') || (codeLower.includes('res.send(') && code.includes('${') && codeLower.includes('<div>'))) {
+    // XSS check: Chỉ báo lỗi khi có gán innerHTML không an toàn hoặc dùng template chèn biến dynamic trực tiếp
+    if (!isPureHtml && (codeLower.includes('.innerhtml =') || codeLower.includes('.innerhtml=') || (codeLower.includes('res.send(') && code.includes('${') && codeLower.includes('<div>')))) {
       const lines = code.split('\n');
       const lineIdx = lines.findIndex(l => l.includes('innerHTML') || (l.includes('${') && (l.includes('userBio') || l.includes('bio'))));
       const lineContent = lineIdx >= 0 ? lines[lineIdx].trim() : "<div id=\"user-bio\">${userBio}</div>";
