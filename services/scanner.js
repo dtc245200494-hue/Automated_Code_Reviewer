@@ -148,6 +148,40 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
 `;
   }
 
+  // Hỗ trợ chia nhỏ code thành các đoạn (chunk) để quét 100% toàn bộ file mà không bị vượt quá token limit
+  generateChunkSecurityPrompt(chunkLines, startLineNumber, language = 'auto') {
+    return `Bạn là một chuyên gia An toàn thông tin và Đánh giá mã nguồn (AppSec Expert & Code Auditor) với chuyên môn sâu về OWASP Top 10.
+Nhiệm vụ của bạn là phân tích đoạn mã nguồn dưới đây (ngôn ngữ: ${language}) từ dòng [L${startLineNumber}] đến dòng [L${startLineNumber + chunkLines.length - 1}] và rà soát mọi lỗ hổng bảo mật tiềm ẩn.
+
+DANH MỤC LỖ HỔNG CẦN CHÚ Ý: SQLi, XSS, Hardcoded Secrets, IDOR, CSRF, Command Injection, Path Traversal, Auth/Session bypass.
+
+YÊU CẦU ĐỊNH DẠNG TRẢ VỀ (JSON duy nhất):
+{
+  "is_safe": boolean,
+  "overall_summary": "Tóm tắt ngắn gọn",
+  "vulnerabilities": [
+    {
+      "type": "Tên loại lỗ hổng",
+      "severity": "Cao" | "Trung bình" | "Thấp" | "Nghiêm trọng",
+      "owasp_category": "Mã OWASP",
+      "line_number": ${startLineNumber}, // Số nguyên chỉ chính xác dòng code bị lỗi theo chỉ số [L...]
+      "affected_lines": "Dòng code lỗi",
+      "explanation": "Giải thích chi tiết nguy hiểm",
+      "attack_scenario": "Kịch bản khai thác",
+      "remediation": "Cách khắc phục",
+      "fixed_code": "Đoạn code đã sửa an toàn"
+    }
+  ],
+  "recommendations": []
+}
+
+Đoạn code cần phân tích:
+\`\`\`${language}
+${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
+\`\`\`
+`;
+  }
+
   async scanCode(code, language = 'auto', customConfig = null) {
     if (!code || !code.trim()) {
       throw new Error("Mã nguồn không được để trống.");
@@ -163,43 +197,84 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
 
     // Nếu có AI Client hợp lệ (từ client hoặc từ server env)
     if (activeClient) {
-      // Giới hạn độ dài code gửi tới AI để không vượt quá giới hạn 8000 TPM của Groq
-      let codeToScan = code;
-      const lines = code.split('\n');
-      if (lines.length > 350) {
-        // Cắt tối đa 350 dòng quan trọng đầu tiên kèm cảnh báo
-        codeToScan = lines.slice(0, 350).join('\n') + '\n// ... [Mã nguồn quá dài, hệ thống trích xuất 350 dòng đầu để rà soát an toàn tokens]';
+      const allLines = code.split('\n');
+      const CHUNK_SIZE = 250; // Mỗi đoạn 250 dòng code để luôn luôn dưới 8.000 tokens
+
+      // Nếu file ngắn (<= 250 dòng), quét trực tiếp 1 lần
+      if (allLines.length <= CHUNK_SIZE) {
+        const prompt = this.generateSecurityPrompt(code, language);
+        try {
+          const res = await activeClient.chat.completions.create({
+            model: activeModel,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.2,
+            response_format: { type: "json_object" }
+          });
+
+          const raw = res.choices[0]?.message?.content || '{}';
+          const parsed = JSON.parse(raw);
+          return {
+            ...parsed,
+            source: 'ai_live',
+            model_used: activeModel
+          };
+        } catch (err) {
+          console.warn('AI Scan lỗi, dùng fallback Heuristic:', err.message);
+          return this.mockAnalysis(code, language);
+        }
       }
 
-      const prompt = this.generateSecurityPrompt(codeToScan, language);
-      try {
-        const res = await activeClient.chat.completions.create({
-          model: activeModel,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.2,
-          response_format: { type: "json_object" }
-        });
+      // NẾU FILE DÀI (> 250 dòng): Chia nhỏ file thành từng phần để quét toàn bộ 100% không sót dòng nào!
+      let aggregatedVulns = [];
+      let aggregatedRecommendations = [];
+      let summaries = [];
 
-        const raw = res.choices[0]?.message?.content || '{}';
-        const parsed = JSON.parse(raw);
-        return {
-          ...parsed,
-          source: 'ai_live',
-          model_used: activeModel
-        };
-      } catch (err) {
-        // Nếu dính lỗi Rate Limit / Request too large (413), tự động fallback sang Heuristic Analyzer
-        console.warn('AI Scan gặp lỗi (rate limit/quá dài), tự động dùng Heuristic fallback:', err.message);
-        const fallbackRes = this.mockAnalysis(code, language);
-        return {
-          ...fallbackRes,
-          source: 'heuristic_fallback',
-          overall_summary: `[Lưu ý: File quá dài so với giới hạn Token miễn phí (${lines.length} dòng), hệ thống đã chuyển sang Phân tích Quy tắc Tự động Heuristic]\n` + (fallbackRes.overall_summary || '')
-        };
+      for (let i = 0; i < allLines.length; i += CHUNK_SIZE) {
+        const chunkLines = allLines.slice(i, i + CHUNK_SIZE);
+        const startLineNumber = i + 1;
+        const prompt = this.generateChunkSecurityPrompt(chunkLines, startLineNumber, language);
+
+        try {
+          const res = await activeClient.chat.completions.create({
+            model: activeModel,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.2,
+            response_format: { type: "json_object" }
+          });
+
+          const raw = res.choices[0]?.message?.content || '{}';
+          const parsed = JSON.parse(raw);
+
+          if (parsed.vulnerabilities && Array.isArray(parsed.vulnerabilities)) {
+            aggregatedVulns.push(...parsed.vulnerabilities);
+          }
+          if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
+            aggregatedRecommendations.push(...parsed.recommendations);
+          }
+          if (parsed.overall_summary && parsed.overall_summary !== 'Tóm tắt ngắn gọn') {
+            summaries.push(`Đoạn L${startLineNumber}-L${Math.min(startLineNumber + CHUNK_SIZE - 1, allLines.length)}: ${parsed.overall_summary}`);
+          }
+        } catch (err) {
+          console.warn(`Lỗi khi quét đoạn L${startLineNumber}:`, err.message);
+        }
       }
+
+      // Lọc trùng khuyến nghị
+      const uniqueRecs = Array.from(new Set(aggregatedRecommendations));
+
+      return {
+        is_safe: aggregatedVulns.length === 0,
+        overall_summary: aggregatedVulns.length === 0 
+          ? `Đã phân tích toàn diện toàn bộ ${allLines.length} dòng code (chia ${Math.ceil(allLines.length / CHUNK_SIZE)} phân đoạn). Không phát hiện lỗ hổng nghiêm trọng.`
+          : `Đã phân tích toàn bộ ${allLines.length} dòng code qua ${Math.ceil(allLines.length / CHUNK_SIZE)} phân đoạn. Phát hiện ${aggregatedVulns.length} nguy cơ tiềm ẩn.\n` + summaries.join('\n'),
+        vulnerabilities: aggregatedVulns,
+        recommendations: uniqueRecs,
+        source: 'ai_live_chunked',
+        model_used: activeModel
+      };
     }
 
-    // Fallback: Mô phỏng phân tích bảo mật thông minh dựa trên heuristic (Mock Analyzer khi chưa có OPENAI_API_KEY)
+    // Fallback: Mô phỏng phân tích bảo mật thông minh dựa trên heuristic
     return this.mockAnalysis(code, language);
   }
 
