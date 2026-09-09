@@ -1252,19 +1252,20 @@ body {
   line-height: 1.6;
 }
 
-/* Loading State */
+/* Loading State & Progress Bar */
 .loading-box {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 380px;
+  min-height: 380px;
+  padding: 30px 20px;
   gap: 18px;
 }
 
 .spinner {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   border: 4px solid rgba(88, 166, 255, 0.2);
   border-top-color: var(--accent-cyan);
   border-radius: 50%;
@@ -1273,6 +1274,56 @@ body {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.scan-progress-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.scan-progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.scan-progress-bar-fill {
+  height: 100%;
+  width: 10%;
+  background: linear-gradient(90deg, #1f6feb 0%, #00d2ff 50%, #238636 100%);
+  border-radius: 10px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+}
+
+.scan-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.scan-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(56, 139, 253, 0.15);
+  color: #79c0ff;
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  margin-top: 4px;
 }
 
 /* Integration Banner */

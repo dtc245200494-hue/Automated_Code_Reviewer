@@ -691,12 +691,23 @@ async function handleScanAllFolder() {
     updateEditorStats();
     renderFileTree();
 
+    const pct = Math.round(((i) / uploadedFiles.length) * 100);
     resultsContainer.innerHTML = `
       <div class="loading-box">
         <div class="spinner"></div>
-        <div style="text-align: center;">
+        <div style="text-align: center; width: 100%; max-width: 460px;">
           <h3 style="margin-bottom: 6px;">Đang quét (${i + 1}/${uploadedFiles.length}): ${escapeHtml(file.path)}</h3>
-          <p style="color: var(--text-muted); font-size: 0.85rem;">Kiểm tra các mẫu bảo mật OWASP Top 10...</p>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Kiểm tra các mẫu bảo mật OWASP Top 10...</p>
+
+          <div class="scan-progress-container">
+            <div class="scan-progress-bar-bg">
+              <div class="scan-progress-bar-fill" style="width: ${pct}%;"></div>
+            </div>
+            <div class="scan-progress-info">
+              <span>Đã quét ${i}/${uploadedFiles.length} file</span>
+              <span>${pct}%</span>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1067,17 +1078,66 @@ async function handleScan() {
   scanBtn.disabled = true;
   scanBtn.querySelector('.btn-scan-text').textContent = 'Đang phân tích...';
 
+  const startTime = Date.now();
+  const codeLines = code.split('\n').length;
+  const chunkCount = Math.max(1, Math.ceil(codeLines / 250));
+
   resultsContainer.innerHTML = `
     <div class="loading-box">
       <div class="spinner"></div>
-      <div style="text-align: center;">
+      <div style="text-align: center; width: 100%; max-width: 460px;">
         <h3 style="margin-bottom: 6px;">Đang rà soát lỗ hổng bảo mật...</h3>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">Kiểm tra các quy tắc OWASP Top 10, cấu trúc luồng dữ liệu và phát hiện nguy cơ tiềm ẩn.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+          Đang quét ${codeLines} dòng mã nguồn (${chunkCount} phân đoạn) theo chuẩn OWASP Top 10.
+        </p>
+
+        <div class="scan-progress-container">
+          <div class="scan-progress-bar-bg">
+            <div id="scanProgressBarFill" class="scan-progress-bar-fill" style="width: 15%;"></div>
+          </div>
+          <div class="scan-progress-info">
+            <span id="scanProgressStage">Giai đoạn: Khởi tạo phân tích mã...</span>
+            <span id="scanProgressTimer">0.0s</span>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <span id="scanStageBadge" class="scan-stage-badge">
+            ⚡ Đang gửi request AI kiểm tra mã...
+          </span>
+        </div>
       </div>
     </div>
   `;
 
-  const startTime = Date.now();
+  const barFill = document.getElementById('scanProgressBarFill');
+  const stageText = document.getElementById('scanProgressStage');
+  const stageBadge = document.getElementById('scanStageBadge');
+  const timerText = document.getElementById('scanProgressTimer');
+
+  // Bộ đếm thời gian và mô phỏng tiến độ trực quan theo từng giai đoạn
+  let progress = 15;
+  const progressInterval = setInterval(() => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    if (timerText) timerText.textContent = `${elapsed}s`;
+
+    if (progress < 90) {
+      progress += (90 - progress) * 0.08;
+      if (barFill) barFill.style.width = `${progress.toFixed(0)}%`;
+    }
+
+    if (elapsed > 1.5 && progress < 45) {
+      if (stageText) stageText.textContent = `Giai đoạn: Đang rà soát cú pháp & AST...`;
+      if (stageBadge) stageBadge.textContent = `🔍 Đang đối chiếu các quy tắc OWASP Injection & XSS`;
+    } else if (elapsed > 3.5 && progress < 75) {
+      if (stageText) stageText.textContent = `Giai đoạn: Kiểm tra Secrets & Cấu hình CSDL...`;
+      if (stageBadge) stageBadge.textContent = `🔑 Rà soát Hardcoded API Keys, JWT, Session Bypass`;
+    } else if (elapsed > 5.5) {
+      if (stageText) stageText.textContent = `Giai đoạn: Tổng hợp kết quả & lập mã vá (Remediation)...`;
+      if (stageBadge) stageBadge.textContent = `🛠️ Tạo giải pháp khắc phục triệt để và code mẫu`;
+    }
+  }, 300);
+
   const clientConfig = getStoredApiConfig();
   const scanPayload = {
     code: code,
@@ -1095,6 +1155,10 @@ async function handleScan() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(scanPayload)
     });
+
+    clearInterval(progressInterval);
+    if (barFill) barFill.style.width = '100%';
+    if (stageText) stageText.textContent = 'Hoàn tất phân tích 100%!';
 
     const data = await res.json();
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
