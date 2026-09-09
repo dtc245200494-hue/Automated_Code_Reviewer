@@ -163,24 +163,39 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
 
     // Nếu có AI Client hợp lệ (từ client hoặc từ server env)
     if (activeClient) {
-      const prompt = this.generateSecurityPrompt(code, language);
-      const res = await activeClient.chat.completions.create({
-        model: activeModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        response_format: { type: "json_object" }
-      });
+      // Giới hạn độ dài code gửi tới AI để không vượt quá giới hạn 8000 TPM của Groq
+      let codeToScan = code;
+      const lines = code.split('\n');
+      if (lines.length > 350) {
+        // Cắt tối đa 350 dòng quan trọng đầu tiên kèm cảnh báo
+        codeToScan = lines.slice(0, 350).join('\n') + '\n// ... [Mã nguồn quá dài, hệ thống trích xuất 350 dòng đầu để rà soát an toàn tokens]';
+      }
 
-      const raw = res.choices[0]?.message?.content || '{}';
+      const prompt = this.generateSecurityPrompt(codeToScan, language);
       try {
+        const res = await activeClient.chat.completions.create({
+          model: activeModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          response_format: { type: "json_object" }
+        });
+
+        const raw = res.choices[0]?.message?.content || '{}';
         const parsed = JSON.parse(raw);
         return {
           ...parsed,
           source: 'ai_live',
           model_used: activeModel
         };
-      } catch (e) {
-        throw new Error("Không thể parse kết quả JSON từ AI: " + raw);
+      } catch (err) {
+        // Nếu dính lỗi Rate Limit / Request too large (413), tự động fallback sang Heuristic Analyzer
+        console.warn('AI Scan gặp lỗi (rate limit/quá dài), tự động dùng Heuristic fallback:', err.message);
+        const fallbackRes = this.mockAnalysis(code, language);
+        return {
+          ...fallbackRes,
+          source: 'heuristic_fallback',
+          overall_summary: `[Lưu ý: File quá dài so với giới hạn Token miễn phí (${lines.length} dòng), hệ thống đã chuyển sang Phân tích Quy tắc Tự động Heuristic]\n` + (fallbackRes.overall_summary || '')
+        };
       }
     }
 
