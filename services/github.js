@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Security Code Reviewer & Web Scanner
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
@@ -9,7 +9,7 @@
 import https from 'https';
 
 const CODE_EXTENSIONS = new Set([
-  'js', 'jsx', 'ts', 'tsx', 'py', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'json', 'yaml', 'yml'
+  'js', 'jsx', 'ts', 'tsx', 'py', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'htm', 'json', 'yaml', 'yml', 'db', 'sqlite', 'sqlite3'
 ]);
 
 const EXT_TO_LANG = {
@@ -28,9 +28,13 @@ const EXT_TO_LANG = {
   'rb': 'ruby',
   'sh': 'bash',
   'html': 'html',
+  'htm': 'html',
   'json': 'json',
   'yaml': 'yaml',
-  'yml': 'yaml'
+  'yml': 'yaml',
+  'db': 'sql',
+  'sqlite': 'sql',
+  'sqlite3': 'sql'
 };
 
 function httpsGetJson(url, headers = {}) {

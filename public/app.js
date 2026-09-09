@@ -93,13 +93,17 @@ const EXT_TO_LANG = {
   'rb': 'ruby',
   'sh': 'bash',
   'html': 'html',
+  'htm': 'html',
   'json': 'json',
   'yaml': 'yaml',
-  'yml': 'yaml'
+  'yml': 'yaml',
+  'db': 'sql',
+  'sqlite': 'sql',
+  'sqlite3': 'sql'
 };
 
 const CODE_EXTENSIONS = new Set([
-  'py', 'js', 'jsx', 'ts', 'tsx', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'json', 'yaml', 'yml'
+  'py', 'js', 'jsx', 'ts', 'tsx', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'htm', 'json', 'yaml', 'yml', 'db', 'sqlite', 'sqlite3'
 ]);
 
 // Init
