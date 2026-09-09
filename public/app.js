@@ -67,9 +67,10 @@ const openApiKeyModalBtn = document.getElementById('openApiKeyModalBtn');
 const apiKeyModal = document.getElementById('apiKeyModal');
 const closeApiKeyModalBtn = document.getElementById('closeApiKeyModalBtn');
 const keyProviderSelect = document.getElementById('keyProviderSelect');
-const apiKeyInput = document.getElementById('apiKeyInput');
+const keyCardsContainer = document.getElementById('keyCardsContainer');
+const addKeyCardBtn = document.getElementById('addKeyCardBtn');
+const modelHintText = document.getElementById('modelHintText');
 const apiModelInput = document.getElementById('apiModelInput');
-const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibilityBtn');
 const apiKeyHelpLink = document.getElementById('apiKeyHelpLink');
 const apiKeyTestStatus = document.getElementById('apiKeyTestStatus');
 const testApiKeyBtn = document.getElementById('testApiKeyBtn');
@@ -477,29 +478,11 @@ function setupEventListeners() {
 
   keyProviderSelect.addEventListener('change', () => {
     const prov = keyProviderSelect.value;
-    if (prov === 'groq') {
-      apiKeyHelpLink.innerHTML = '<a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>';
-      apiModelInput.placeholder = 'openai/gpt-oss-120b';
-      if (!apiModelInput.value || apiModelInput.value === 'gpt-4o-mini') {
-        apiModelInput.value = 'openai/gpt-oss-120b';
-      }
-    } else {
-      apiKeyHelpLink.innerHTML = '<a href="https://platform.openai.com/api-keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key OpenAI</a>';
-      apiModelInput.placeholder = 'gpt-4o-mini';
-      if (!apiModelInput.value || apiModelInput.value === 'openai/gpt-oss-120b') {
-        apiModelInput.value = 'gpt-4o-mini';
-      }
-    }
+    updateProviderHints(prov);
   });
 
-  toggleApiKeyVisibilityBtn.addEventListener('click', () => {
-    if (apiKeyInput.type === 'password') {
-      apiKeyInput.type = 'text';
-      toggleApiKeyVisibilityBtn.textContent = '🙈';
-    } else {
-      apiKeyInput.type = 'password';
-      toggleApiKeyVisibilityBtn.textContent = '👁️';
-    }
+  addKeyCardBtn.addEventListener('click', () => {
+    createKeyCard('');
   });
 
   testApiKeyBtn.addEventListener('click', handleTestApiKey);
@@ -507,32 +490,128 @@ function setupEventListeners() {
   clearApiKeyBtn.addEventListener('click', handleClearApiKey);
 }
 
+// Cập nhật gợi ý model và link đăng ký theo loại AI
+function updateProviderHints(prov) {
+  if (prov === 'groq') {
+    apiKeyHelpLink.innerHTML = '<a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>';
+    apiModelInput.placeholder = 'openai/gpt-oss-120b';
+    modelHintText.innerHTML = 'Gợi ý Groq: <code>openai/gpt-oss-120b</code>, <code>openai/gpt-oss-20b</code>';
+    if (!apiModelInput.value || apiModelInput.value === 'gpt-4o-mini' || apiModelInput.value === 'gemini-1.5-flash') {
+      apiModelInput.value = 'openai/gpt-oss-120b';
+    }
+  } else if (prov === 'gemini') {
+    apiKeyHelpLink.innerHTML = '<a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy Gemini API Key miễn phí (Google AI Studio)</a>';
+    apiModelInput.placeholder = 'gemini-1.5-flash';
+    modelHintText.innerHTML = 'Gợi ý Google: <code>gemini-1.5-flash</code> (siêu nhanh, miễn phí), <code>gemini-1.5-pro</code>';
+    apiModelInput.value = 'gemini-1.5-flash';
+  } else if (prov === 'deepseek') {
+    apiKeyHelpLink.innerHTML = '<a href="https://platform.deepseek.com/api_keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API Key DeepSeek</a>';
+    apiModelInput.placeholder = 'deepseek-chat';
+    modelHintText.innerHTML = 'Gợi ý DeepSeek: <code>deepseek-chat</code>, <code>deepseek-reasoner</code> (R1)';
+    apiModelInput.value = 'deepseek-chat';
+  } else if (prov === 'openrouter') {
+    apiKeyHelpLink.innerHTML = '<a href="https://openrouter.ai/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API Key OpenRouter (Hàng trăm model AI)</a>';
+    apiModelInput.placeholder = 'meta-llama/llama-3.3-70b-instruct:free';
+    modelHintText.innerHTML = 'Gợi ý OpenRouter: <code>meta-llama/llama-3.3-70b-instruct:free</code>, <code>anthropic/claude-3.5-sonnet</code>';
+    apiModelInput.value = 'meta-llama/llama-3.3-70b-instruct:free';
+  } else {
+    apiKeyHelpLink.innerHTML = '<a href="https://platform.openai.com/api-keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key OpenAI</a>';
+    apiModelInput.placeholder = 'gpt-4o-mini';
+    modelHintText.innerHTML = 'Gợi ý OpenAI: <code>gpt-4o-mini</code>, <code>gpt-4o</code>';
+    apiModelInput.value = 'gpt-4o-mini';
+  }
+}
+
+// Tạo 1 dòng card API Key chuyên nghiệp
+function createKeyCard(val = '') {
+  const card = document.createElement('div');
+  card.className = 'key-card-row';
+  card.style.cssText = 'display: flex; align-items: center; gap: 8px; background: rgba(33, 38, 45, 0.6); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-color);';
+
+  const count = keyCardsContainer.children.length + 1;
+
+  card.innerHTML = `
+    <span style="font-size: 0.78rem; font-family: var(--font-mono); color: #79c0ff; min-width: 55px; font-weight: 600;">Key #${count}:</span>
+    <input type="password" class="form-input dynamic-key-input" style="flex: 1; padding: 6px 10px; font-size: 0.82rem;" placeholder="Dán API Key vào đây..." value="${escapeHtml(val)}" />
+    <button type="button" class="btn-icon btn-toggle-show" style="border:none; background:transparent; font-size: 1rem; cursor:pointer;" title="Hiện/Ẩn Key">👁️</button>
+    <button type="button" class="btn-icon btn-remove-card" style="border:none; background:transparent; color:#ff7b72; font-size: 1rem; cursor:pointer;" title="Xóa Key này">❌</button>
+  `;
+
+  const inputEl = card.querySelector('.dynamic-key-input');
+  const toggleBtn = card.querySelector('.btn-toggle-show');
+  const removeBtn = card.querySelector('.btn-remove-card');
+
+  toggleBtn.addEventListener('click', () => {
+    if (inputEl.type === 'password') {
+      inputEl.type = 'text';
+      toggleBtn.textContent = '🙈';
+    } else {
+      inputEl.type = 'password';
+      toggleBtn.textContent = '👁️';
+    }
+  });
+
+  removeBtn.addEventListener('click', () => {
+    if (keyCardsContainer.children.length <= 1) {
+      inputEl.value = '';
+    } else {
+      card.remove();
+      refreshKeyCardLabels();
+    }
+  });
+
+  keyCardsContainer.appendChild(card);
+}
+
+function refreshKeyCardLabels() {
+  Array.from(keyCardsContainer.children).forEach((card, idx) => {
+    const lbl = card.querySelector('span');
+    if (lbl) lbl.textContent = `Key #${idx + 1}:`;
+  });
+}
+
+function getAllEnteredKeys() {
+  const inputs = keyCardsContainer.querySelectorAll('.dynamic-key-input');
+  const keys = [];
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val) keys.push(val);
+  });
+  return keys;
+}
+
 // Nạp dữ liệu cấu hình đã lưu vào Modal API Key
 function loadApiKeyModalState() {
   const config = getStoredApiConfig();
   apiKeyTestStatus.style.display = 'none';
   apiKeyTestStatus.innerHTML = '';
+  keyCardsContainer.innerHTML = '';
 
-  if (config) {
-    keyProviderSelect.value = config.provider || 'groq';
-    apiKeyInput.value = config.apiKey || '';
-    apiModelInput.value = config.model || (config.provider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-oss-120b');
+  const prov = config?.provider || 'groq';
+  keyProviderSelect.value = prov;
+  updateProviderHints(prov);
+
+  if (config && config.apiKey) {
+    const rawKeys = config.apiKey.split(/[\n,;]+/).map(k => k.trim()).filter(k => k.length > 5);
+    if (rawKeys.length > 0) {
+      rawKeys.forEach(k => createKeyCard(k));
+    } else {
+      createKeyCard('');
+    }
+    apiModelInput.value = config.model || '';
   } else {
-    keyProviderSelect.value = 'groq';
-    apiKeyInput.value = '';
-    apiModelInput.value = 'openai/gpt-oss-120b';
+    createKeyCard('');
   }
 }
 
 // Kiểm tra kết nối API Key trực tiếp với Backend
 async function handleTestApiKey() {
-  const key = apiKeyInput.value.trim();
+  const keys = getAllEnteredKeys();
   const provider = keyProviderSelect.value;
   const model = apiModelInput.value.trim();
 
-  if (!key) {
-    alert('Vui lòng nhập API Key để kiểm tra.');
-    apiKeyInput.focus();
+  if (keys.length === 0) {
+    alert('Vui lòng nhập ít nhất 1 API Key để kiểm tra.');
     return;
   }
 
@@ -546,7 +625,7 @@ async function handleTestApiKey() {
     const res = await fetch('/api/config/test-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: key, provider, model })
+      body: JSON.stringify({ apiKey: keys.join('\n'), provider, model })
     });
 
     const data = await res.json();
@@ -568,32 +647,32 @@ async function handleTestApiKey() {
 
 // Lưu cấu hình API Key vào LocalStorage
 function handleSaveApiKey() {
-  const key = apiKeyInput.value.trim();
+  const keys = getAllEnteredKeys();
   const provider = keyProviderSelect.value;
-  const model = apiModelInput.value.trim() || (provider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-oss-120b');
+  const model = apiModelInput.value.trim() || 'openai/gpt-oss-120b';
 
-  if (!key) {
-    alert('Vui lòng nhập API Key hoặc bấm "Xóa Key" nếu không muốn sử dụng.');
-    apiKeyInput.focus();
+  if (keys.length === 0) {
+    alert('Vui lòng nhập ít nhất 1 API Key hoặc bấm "Xóa Key" nếu không muốn sử dụng.');
     return;
   }
 
   saveStoredApiConfig({
-    apiKey: key,
+    apiKey: keys.join('\n'),
     provider: provider,
     model: model
   });
 
   fetchServerStatus();
   apiKeyModal.classList.remove('active');
-  alert('Đã lưu cấu hình API Key thành công! Giờ đây hệ thống sẽ ưu tiên dùng key này để quét.');
+  alert(`Đã lưu cấu hình thành công với ${keys.length} API Key! Hệ thống sẽ kích hoạt quét đa luồng siêu tốc.`);
 }
 
 // Xóa API Key khỏi LocalStorage
 function handleClearApiKey() {
-  if (confirm('Bạn có chắc chắn muốn xóa API Key đã lưu trên trình duyệt?')) {
+  if (confirm('Bạn có chắc chắn muốn xóa toàn bộ API Key đã lưu trên trình duyệt?')) {
     clearStoredApiConfig();
-    apiKeyInput.value = '';
+    keyCardsContainer.innerHTML = '';
+    createKeyCard('');
     apiKeyTestStatus.style.display = 'none';
     fetchServerStatus();
     apiKeyModal.classList.remove('active');

@@ -290,36 +290,44 @@ jobs:
         </p>
 
         <div class="form-group">
-          <label class="form-label">Nhà cung cấp AI (Provider):</label>
-          <select id="keyProviderSelect" class="form-input styled-select" style="width: 100%;">
-            <option value="groq">Groq Cloud AI (Khuyên dùng - Miễn phí & Siêu nhanh)</option>
-            <option value="openai">OpenAI (sk-...)</option>
+          <label class="form-label">Chọn Loại Trí Tuệ Nhân Tạo (AI Provider):</label>
+          <select id="keyProviderSelect" class="form-input styled-select" style="width: 100%; font-size: 0.9rem; padding: 10px 12px;">
+            <option value="groq">⚡ Groq Cloud AI (Khuyên dùng - Miễn phí & Siêu tốc)</option>
+            <option value="gemini">✨ Google Gemini AI (Miễn phí qua Gemini API Key)</option>
+            <option value="deepseek">🐳 DeepSeek AI (Rẻ & Đánh giá bảo mật cực tốt)</option>
+            <option value="openrouter">🌐 OpenRouter AI (Dùng mọi model: Claude, Llama 3.3...)</option>
+            <option value="openai">🤖 OpenAI (GPT-4o, GPT-4o-mini)</option>
           </select>
         </div>
 
         <div class="form-group">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <label class="form-label">API Key (Hỗ trợ nhiều key để chạy đa luồng siêu nhanh):</label>
-            <span id="apiKeyHelpLink" style="font-size:0.75rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">Danh Sách API Key Đa Luồng:</label>
+            <span id="apiKeyHelpLink" style="font-size:0.78rem;">
               <a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>
             </span>
           </div>
-          <div style="position: relative; display: flex; align-items: center;">
-            <textarea id="apiKeyInput" class="form-input" style="padding-right: 40px; min-height: 60px; resize: vertical;" autocomplete="off" placeholder="Nhập 1 key hoặc nhiều key (mỗi dòng 1 key gsk_... để chạy song song đa luồng)"></textarea>
-            <button type="button" id="toggleApiKeyVisibilityBtn" class="btn-icon" style="position: absolute; right: 8px; top: 8px; border:none; background:transparent; cursor:pointer;" title="Hiện/Ẩn Key">
-              👁️
-            </button>
+
+          <!-- Dynamic Key Cards Container -->
+          <div id="keyCardsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+            <!-- Rendered by JS -->
           </div>
-          <span style="font-size:0.75rem; color: #7ee787;">
-            ⚡ <strong>Mẹo tăng tốc:</strong> Bạn có thể tạo 2-3 API key Groq rồi dán vào đây (mỗi dòng 1 key), hệ thống sẽ tự động phân bổ đa luồng quét song song cực nhanh!
-          </span>
+
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" id="addKeyCardBtn" class="btn-secondary" style="font-size: 0.82rem; padding: 6px 12px; border-color: #388bfd; color: #79c0ff;">
+              ➕ Thêm API Key Dự Phòng (Đa luồng)
+            </button>
+            <span style="font-size: 0.75rem; color: #7ee787;">
+              ⚡ Mỗi key bổ sung sẽ giúp phân tán tải và tăng tốc phân tích!
+            </span>
+          </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" style="margin-top: 14px;">
           <label class="form-label">Mô hình AI (Model):</label>
           <input type="text" id="apiModelInput" class="form-input" autocomplete="off" placeholder="openai/gpt-oss-120b" />
-          <span style="font-size:0.75rem; color: var(--text-dim);">
-            Gợi ý: <code>openai/gpt-oss-120b</code>, <code>openai/gpt-oss-20b</code> (Groq) hoặc <code>gpt-4o-mini</code> (OpenAI)
+          <span id="modelHintText" style="font-size:0.75rem; color: var(--text-dim);">
+            Gợi ý Groq: <code>openai/gpt-oss-120b</code>, <code>openai/gpt-oss-20b</code>
           </span>
         </div>
 

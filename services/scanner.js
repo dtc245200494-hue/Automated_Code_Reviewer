@@ -61,6 +61,7 @@ export class ScannerService {
     const key = apiKey ? apiKey.trim() : '';
     if (!key) return null;
 
+    // 1. Groq Cloud AI
     if (provider === 'groq' || key.startsWith('gsk_')) {
       return new OpenAI({
         apiKey: key,
@@ -68,6 +69,31 @@ export class ScannerService {
       });
     }
 
+    // 2. Google Gemini (thông qua OpenAI-compatible endpoint v1beta/openai/)
+    if (provider === 'gemini' || key.startsWith('AIzaSy')) {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+    }
+
+    // 3. DeepSeek AI
+    if (provider === 'deepseek') {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://api.deepseek.com/v1',
+      });
+    }
+
+    // 4. OpenRouter AI (Dùng mọi model: Claude, Llama, Mistral...)
+    if (provider === 'openrouter') {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://openrouter.ai/api/v1',
+      });
+    }
+
+    // 5. OpenAI hoặc mặc định
     return new OpenAI({
       apiKey: key,
       baseURL: baseURL || (this.isGithubModels ? 'https://models.github.ai/inference' : 'https://api.openai.com/v1'),
@@ -82,7 +108,25 @@ export class ScannerService {
 
     const firstKey = rawKeys[0];
     const testClient = this.createClient(firstKey, provider);
-    const targetModel = model || (provider === 'groq' || firstKey.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
+    
+    let defaultModel = 'openai/gpt-oss-120b';
+    let providerName = 'Groq Cloud AI';
+
+    if (provider === 'gemini' || firstKey.startsWith('AIzaSy')) {
+      defaultModel = 'gemini-1.5-flash';
+      providerName = 'Google Gemini AI';
+    } else if (provider === 'deepseek') {
+      defaultModel = 'deepseek-chat';
+      providerName = 'DeepSeek AI';
+    } else if (provider === 'openrouter') {
+      defaultModel = 'meta-llama/llama-3.3-70b-instruct:free';
+      providerName = 'OpenRouter AI';
+    } else if (provider === 'openai' || firstKey.startsWith('sk-')) {
+      defaultModel = 'gpt-4o-mini';
+      providerName = 'OpenAI';
+    }
+
+    const targetModel = model || defaultModel;
 
     await testClient.chat.completions.create({
       model: targetModel,
@@ -94,7 +138,7 @@ export class ScannerService {
       success: true,
       message: `Kết nối thành công! Đã nhận diện ${rawKeys.length} API Key để chạy đa luồng.`,
       model: targetModel,
-      provider: provider === 'groq' || firstKey.startsWith('gsk_') ? 'Groq Cloud AI' : 'OpenAI'
+      provider: providerName
     };
   }
 
