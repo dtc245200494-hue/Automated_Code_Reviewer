@@ -75,13 +75,14 @@ export class ScannerService {
   }
 
   async testApiKey(apiKey, provider = 'groq', model = '') {
-    const key = apiKey ? apiKey.trim() : '';
-    if (!key) {
+    const rawKeys = (apiKey || '').split(/[\n,;]+/).map(k => k.trim()).filter(k => k.length > 5);
+    if (rawKeys.length === 0) {
       throw new Error('API Key không được để trống.');
     }
 
-    const testClient = this.createClient(key, provider);
-    const targetModel = model || (provider === 'groq' || key.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
+    const firstKey = rawKeys[0];
+    const testClient = this.createClient(firstKey, provider);
+    const targetModel = model || (provider === 'groq' || firstKey.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
 
     await testClient.chat.completions.create({
       model: targetModel,
@@ -91,9 +92,9 @@ export class ScannerService {
 
     return {
       success: true,
-      message: 'Kết nối API Key thành công!',
+      message: `Kết nối thành công! Đã nhận diện ${rawKeys.length} API Key để chạy đa luồng.`,
       model: targetModel,
-      provider: provider === 'groq' || key.startsWith('gsk_') ? 'Groq Cloud AI' : 'OpenAI'
+      provider: provider === 'groq' || firstKey.startsWith('gsk_') ? 'Groq Cloud AI' : 'OpenAI'
     };
   }
 
@@ -224,18 +225,35 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
         }
       }
 
-      // NẾU FILE DÀI (> 250 dòng): Chia nhỏ file thành từng phần để quét toàn bộ 100% không sót dòng nào!
-      let aggregatedVulns = [];
-      let aggregatedRecommendations = [];
-      let summaries = [];
-
+      // NẾU FILE DÀI (> 250 dòng): Chia nhỏ file và chạy ĐA LUỒNG (Parallel Async) để quét siêu nhanh!
+      const chunks = [];
       for (let i = 0; i < allLines.length; i += CHUNK_SIZE) {
-        const chunkLines = allLines.slice(i, i + CHUNK_SIZE);
-        const startLineNumber = i + 1;
-        const prompt = this.generateChunkSecurityPrompt(chunkLines, startLineNumber, language);
+        chunks.push({
+          chunkLines: allLines.slice(i, i + CHUNK_SIZE),
+          startLineNumber: i + 1
+        });
+      }
+
+      // Chuẩn bị danh sách API Key (hỗ trợ nhập nhiều key ngăn cách bởi dấu phẩy hoặc xuống dòng để load-balancing đa luồng)
+      let keyPool = [];
+      if (customConfig && customConfig.apiKey) {
+        keyPool = customConfig.apiKey.split(/[\n,;]+/).map(k => k.trim()).filter(k => k.length > 5);
+      }
+      if (keyPool.length === 0) {
+        keyPool = [this.apiKey || ''];
+      }
+
+      // Tạo client pool tương ứng với từng key
+      const clientPool = keyPool.map(key => this.createClient(key, customConfig?.provider || (this.isGroq ? 'groq' : 'openai'), customConfig?.baseURL) || activeClient);
+
+      // Chạy SONG SONG tất cả các phân đoạn cùng lúc qua Promise.all
+      const chunkPromises = chunks.map(async (chunk, chunkIndex) => {
+        // Luân phiên chia việc cho các API Key khác nhau trong pool (Round-robin đa luồng)
+        const assignedClient = clientPool[chunkIndex % clientPool.length] || activeClient;
+        const prompt = this.generateChunkSecurityPrompt(chunk.chunkLines, chunk.startLineNumber, language);
 
         try {
-          const res = await activeClient.chat.completions.create({
+          const res = await assignedClient.chat.completions.create({
             model: activeModel,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.2,
@@ -244,22 +262,38 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
 
           const raw = res.choices[0]?.message?.content || '{}';
           const parsed = JSON.parse(raw);
-
-          if (parsed.vulnerabilities && Array.isArray(parsed.vulnerabilities)) {
-            aggregatedVulns.push(...parsed.vulnerabilities);
-          }
-          if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
-            aggregatedRecommendations.push(...parsed.recommendations);
-          }
-          if (parsed.overall_summary && parsed.overall_summary !== 'Tóm tắt ngắn gọn') {
-            summaries.push(`Đoạn L${startLineNumber}-L${Math.min(startLineNumber + CHUNK_SIZE - 1, allLines.length)}: ${parsed.overall_summary}`);
-          }
+          return {
+            startLineNumber: chunk.startLineNumber,
+            vulnerabilities: Array.isArray(parsed.vulnerabilities) ? parsed.vulnerabilities : [],
+            recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+            summary: parsed.overall_summary && parsed.overall_summary !== 'Tóm tắt ngắn gọn' 
+              ? `Đoạn L${chunk.startLineNumber}-L${Math.min(chunk.startLineNumber + CHUNK_SIZE - 1, allLines.length)}: ${parsed.overall_summary}` 
+              : ''
+          };
         } catch (err) {
-          console.warn(`Lỗi khi quét đoạn L${startLineNumber}:`, err.message);
+          console.warn(`Lỗi khi quét đoạn L${chunk.startLineNumber}:`, err.message);
+          return {
+            startLineNumber: chunk.startLineNumber,
+            vulnerabilities: [],
+            recommendations: [],
+            summary: ''
+          };
         }
-      }
+      });
 
-      // Lọc trùng và chuẩn hóa khuyến nghị (nếu AI trả về object {title, description} thì trích xuất text)
+      const chunkResults = await Promise.all(chunkPromises);
+
+      let aggregatedVulns = [];
+      let aggregatedRecommendations = [];
+      let summaries = [];
+
+      chunkResults.forEach(cr => {
+        if (cr.vulnerabilities.length) aggregatedVulns.push(...cr.vulnerabilities);
+        if (cr.recommendations.length) aggregatedRecommendations.push(...cr.recommendations);
+        if (cr.summary) summaries.push(cr.summary);
+      });
+
+      // Lọc trùng và chuẩn hóa khuyến nghị
       const formattedRecs = [];
       aggregatedRecommendations.forEach(rec => {
         if (typeof rec === 'string' && rec.trim()) {
@@ -274,11 +308,11 @@ ${chunkLines.map((l, i) => `[L${startLineNumber + i}] ${l}`).join('\n')}
       return {
         is_safe: aggregatedVulns.length === 0,
         overall_summary: aggregatedVulns.length === 0 
-          ? `Đã phân tích toàn diện toàn bộ ${allLines.length} dòng code (chia ${Math.ceil(allLines.length / CHUNK_SIZE)} phân đoạn). Không phát hiện lỗ hổng nghiêm trọng.`
-          : `Đã phân tích toàn bộ ${allLines.length} dòng code qua ${Math.ceil(allLines.length / CHUNK_SIZE)} phân đoạn. Phát hiện ${aggregatedVulns.length} nguy cơ tiềm ẩn.\n` + summaries.join('\n'),
+          ? `Đã quét đa luồng siêu tốc toàn bộ ${allLines.length} dòng code (${chunks.length} phân đoạn song song). Không phát hiện lỗ hổng nghiêm trọng.`
+          : `Đã quét đa luồng siêu tốc toàn bộ ${allLines.length} dòng code qua ${chunks.length} phân đoạn song song. Phát hiện ${aggregatedVulns.length} nguy cơ tiềm ẩn.\n` + summaries.join('\n'),
         vulnerabilities: aggregatedVulns,
         recommendations: uniqueRecs,
-        source: 'ai_live_chunked',
+        source: 'ai_live_chunked_parallel',
         model_used: activeModel
       };
     }
