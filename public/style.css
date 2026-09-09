@@ -34,11 +34,17 @@ body {
   background-color: var(--bg-dark);
   color: var(--text-main);
   font-family: var(--font-sans);
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+}
+
+@media (min-width: 1025px) {
+  body {
+    height: 100vh;
+    overflow: hidden;
+  }
 }
 
 /* Background Cyber Glow */
@@ -258,6 +264,45 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.styled-select {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+  max-width: 170px;
+  transition: border-color 0.2s;
+}
+
+.styled-select:focus {
+  border-color: var(--accent-blue);
+}
+
+.btn-file-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.btn-file-upload svg {
+  flex-shrink: 0;
 }
 
 /* Sidebar Tree */
@@ -1353,4 +1398,200 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.85rem;
+}
+
+/* ==========================================================
+   RESPONSIVE DESIGN (PC, LAPTOP, TABLET & MOBILE)
+   ========================================================== */
+
+/* Laptop & Desktop nhỏ (<= 1200px) */
+@media (max-width: 1200px) {
+  .navbar {
+    padding: 10px 16px;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+  .status-badge {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+  }
+  .btn-github {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+  .styled-select {
+    max-width: 140px;
+  }
+}
+
+/* Tablet & Mobile lớn (<= 992px) */
+@media (max-width: 992px) {
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .app-layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+    gap: 16px;
+    overflow: visible;
+  }
+
+  .app-layout.has-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-sidebar {
+    max-height: 350px !important;
+    height: auto !important;
+  }
+
+  .editor-panel {
+    min-height: 480px;
+    height: auto !important;
+  }
+
+  .results-panel {
+    min-height: 480px;
+    height: auto !important;
+  }
+
+  #codeEditor {
+    min-height: 300px;
+  }
+
+  .code-viewer-container {
+    min-height: 300px;
+    max-height: 500px;
+  }
+
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .editor-controls {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .styled-select {
+    flex: 1;
+    min-width: 130px;
+    max-width: none;
+  }
+
+  .editor-footer {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .btn-scan {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 16px;
+  }
+}
+
+/* Mobile nhỏ (<= 600px) */
+@media (max-width: 600px) {
+  .brand {
+    gap: 10px;
+  }
+
+  .brand-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand-title {
+    font-size: 1.05rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.75rem;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .status-badge {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .btn-github {
+    justify-content: center;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+
+  .editor-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .btn-file-upload {
+    padding: 5px 8px;
+    font-size: 0.72rem;
+  }
+
+  .sample-bar {
+    padding: 8px 12px;
+  }
+
+  .modal-dialog {
+    width: 96%;
+    padding: 0;
+    max-height: 90vh;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .code-line {
+    padding: 1px 8px;
+  }
+
+  .code-line-num {
+    width: 30px;
+    margin-right: 8px;
+  }
+
+  .view-tabs {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .view-tab {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
 }
