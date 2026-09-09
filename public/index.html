@@ -32,6 +32,9 @@
         <span class="status-dot"></span>
         <span class="status-text">Đang kiểm tra...</span>
       </div>
+      <button id="openApiKeyModalBtn" class="btn-github btn-apikey-nav" title="Cấu hình API Key (Groq AI / OpenAI)">
+        🔑 API Key
+      </button>
       <button id="viewGuideBtn" class="btn-github" title="Hướng dẫn tích hợp GitHub CI/CD Bot tự động">
         🤖 Bot CI/CD
       </button>
@@ -269,6 +272,68 @@ jobs:
           <button id="submitGitBtn" class="btn-scan">
             <span>⚡ Tải và Quét Repo</span>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cấu hình API Key -->
+  <div id="apiKeyModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>🔑 Cấu Hình AI Security API Key</h3>
+        <button id="closeApiKeyModalBtn" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 14px;">
+          Cung cấp API Key để sử dụng mô hình trí tuệ nhân tạo quét mã nguồn trực tiếp. Key được lưu an toàn trong trình duyệt của bạn (LocalStorage) và không lưu trên cơ sở dữ liệu.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Nhà cung cấp AI (Provider):</label>
+          <select id="keyProviderSelect" class="form-input styled-select" style="width: 100%;">
+            <option value="groq">Groq Cloud AI (Khuyên dùng - Miễn phí & Siêu nhanh)</option>
+            <option value="openai">OpenAI (sk-...)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label class="form-label">API Key:</label>
+            <span id="apiKeyHelpLink" style="font-size:0.75rem;">
+              <a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>
+            </span>
+          </div>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input type="password" id="apiKeyInput" class="form-input" style="padding-right: 40px;" autocomplete="off" placeholder="gsk_... hoặc sk-..." />
+            <button type="button" id="toggleApiKeyVisibilityBtn" class="btn-icon" style="position: absolute; right: 8px; border:none; background:transparent; cursor:pointer;" title="Hiện/Ẩn Key">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Mô hình AI (Model):</label>
+          <input type="text" id="apiModelInput" class="form-input" autocomplete="off" placeholder="openai/gpt-oss-120b" />
+          <span style="font-size:0.75rem; color: var(--text-dim);">
+            Gợi ý: <code>openai/gpt-oss-120b</code>, <code>llama-3.3-70b-versatile</code> (Groq) hoặc <code>gpt-4o-mini</code> (OpenAI)
+          </span>
+        </div>
+
+        <div id="apiKeyTestStatus" style="margin-top: 10px; font-size: 0.85rem; display: none;"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 18px;">
+          <button id="clearApiKeyBtn" class="btn-secondary" style="color:#ff7b72; border-color: rgba(248,81,73,0.3);">
+            🗑️ Xóa Key
+          </button>
+          <div style="display:flex; gap: 10px;">
+            <button id="testApiKeyBtn" class="btn-secondary">
+              ⚡ Thử kết nối
+            </button>
+            <button id="saveApiKeyBtn" class="btn-scan">
+              <span>💾 Lưu cấu hình</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

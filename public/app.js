@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Security Code Reviewer & Web Scanner
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
@@ -60,6 +60,21 @@ const gitTokenInput = document.getElementById('gitTokenInput');
 const viewGuideBtn = document.getElementById('viewGuideBtn');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const guideModal = document.getElementById('guideModal');
+
+// API Key Modal Elements & Storage
+const API_CONFIG_STORAGE_KEY = 'ai_security_scanner_apiconfig';
+const openApiKeyModalBtn = document.getElementById('openApiKeyModalBtn');
+const apiKeyModal = document.getElementById('apiKeyModal');
+const closeApiKeyModalBtn = document.getElementById('closeApiKeyModalBtn');
+const keyProviderSelect = document.getElementById('keyProviderSelect');
+const apiKeyInput = document.getElementById('apiKeyInput');
+const apiModelInput = document.getElementById('apiModelInput');
+const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibilityBtn');
+const apiKeyHelpLink = document.getElementById('apiKeyHelpLink');
+const apiKeyTestStatus = document.getElementById('apiKeyTestStatus');
+const testApiKeyBtn = document.getElementById('testApiKeyBtn');
+const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
 
 const EXT_TO_LANG = {
   'py': 'python',
@@ -137,18 +152,49 @@ function clearAllHistory() {
   }
 }
 
-// Kiểm tra trạng thái kết nối backend
+// Quản lý cấu hình API Key lưu tại LocalStorage
+function getStoredApiConfig() {
+  try {
+    const raw = localStorage.getItem(API_CONFIG_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveStoredApiConfig(config) {
+  try {
+    localStorage.setItem(API_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  } catch (e) {
+    console.error('Không thể lưu API config:', e);
+  }
+}
+
+function clearStoredApiConfig() {
+  localStorage.removeItem(API_CONFIG_STORAGE_KEY);
+}
+
+// Kiểm tra trạng thái kết nối backend & cập nhật badge theo key của client (nếu có)
 async function fetchServerStatus() {
+  const clientConfig = getStoredApiConfig();
+
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
 
-    if (data.ai_configured) {
+    if (clientConfig && clientConfig.apiKey) {
+      aiStatusBadge.className = 'status-badge online';
+      const provName = clientConfig.provider === 'openai' ? 'OpenAI' : 'Groq AI';
+      aiStatusBadge.querySelector('.status-text').textContent = `AI Online (${provName} Custom)`;
+      aiStatusBadge.title = `Đang sử dụng API Key người dùng: ${clientConfig.model || 'Default model'}`;
+    } else if (data.ai_configured) {
       aiStatusBadge.className = 'status-badge online';
       aiStatusBadge.querySelector('.status-text').textContent = `AI Online (${data.model})`;
+      aiStatusBadge.title = `Server AI Configured (${data.provider})`;
     } else {
       aiStatusBadge.className = 'status-badge warning';
       aiStatusBadge.querySelector('.status-text').textContent = 'Heuristic Mode (Mô phỏng sẵn)';
+      aiStatusBadge.title = 'Bấm "🔑 API Key" ở thanh trên để thêm API Key AI thật!';
     }
   } catch (err) {
     aiStatusBadge.className = 'status-badge';
@@ -411,6 +457,148 @@ function setupEventListeners() {
       guideModal.classList.remove('active');
     }
   });
+
+  // API Key Modal Events
+  openApiKeyModalBtn.addEventListener('click', () => {
+    loadApiKeyModalState();
+    apiKeyModal.classList.add('active');
+    apiKeyInput.focus();
+  });
+
+  closeApiKeyModalBtn.addEventListener('click', () => {
+    apiKeyModal.classList.remove('active');
+  });
+
+  apiKeyModal.addEventListener('click', (e) => {
+    if (e.target === apiKeyModal) {
+      apiKeyModal.classList.remove('active');
+    }
+  });
+
+  keyProviderSelect.addEventListener('change', () => {
+    const prov = keyProviderSelect.value;
+    if (prov === 'groq') {
+      apiKeyHelpLink.innerHTML = '<a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>';
+      apiModelInput.placeholder = 'openai/gpt-oss-120b';
+      if (!apiModelInput.value || apiModelInput.value === 'gpt-4o-mini') {
+        apiModelInput.value = 'openai/gpt-oss-120b';
+      }
+    } else {
+      apiKeyHelpLink.innerHTML = '<a href="https://platform.openai.com/api-keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key OpenAI</a>';
+      apiModelInput.placeholder = 'gpt-4o-mini';
+      if (!apiModelInput.value || apiModelInput.value === 'openai/gpt-oss-120b') {
+        apiModelInput.value = 'gpt-4o-mini';
+      }
+    }
+  });
+
+  toggleApiKeyVisibilityBtn.addEventListener('click', () => {
+    if (apiKeyInput.type === 'password') {
+      apiKeyInput.type = 'text';
+      toggleApiKeyVisibilityBtn.textContent = '🙈';
+    } else {
+      apiKeyInput.type = 'password';
+      toggleApiKeyVisibilityBtn.textContent = '👁️';
+    }
+  });
+
+  testApiKeyBtn.addEventListener('click', handleTestApiKey);
+  saveApiKeyBtn.addEventListener('click', handleSaveApiKey);
+  clearApiKeyBtn.addEventListener('click', handleClearApiKey);
+}
+
+// Nạp dữ liệu cấu hình đã lưu vào Modal API Key
+function loadApiKeyModalState() {
+  const config = getStoredApiConfig();
+  apiKeyTestStatus.style.display = 'none';
+  apiKeyTestStatus.innerHTML = '';
+
+  if (config) {
+    keyProviderSelect.value = config.provider || 'groq';
+    apiKeyInput.value = config.apiKey || '';
+    apiModelInput.value = config.model || (config.provider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-oss-120b');
+  } else {
+    keyProviderSelect.value = 'groq';
+    apiKeyInput.value = '';
+    apiModelInput.value = 'openai/gpt-oss-120b';
+  }
+}
+
+// Kiểm tra kết nối API Key trực tiếp với Backend
+async function handleTestApiKey() {
+  const key = apiKeyInput.value.trim();
+  const provider = keyProviderSelect.value;
+  const model = apiModelInput.value.trim();
+
+  if (!key) {
+    alert('Vui lòng nhập API Key để kiểm tra.');
+    apiKeyInput.focus();
+    return;
+  }
+
+  testApiKeyBtn.disabled = true;
+  testApiKeyBtn.textContent = '⏳ Đang thử...';
+  apiKeyTestStatus.style.display = 'block';
+  apiKeyTestStatus.style.color = '#79c0ff';
+  apiKeyTestStatus.innerHTML = 'Đang gửi yêu cầu xác thực API Key tới máy chủ...';
+
+  try {
+    const res = await fetch('/api/config/test-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key, provider, model })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      apiKeyTestStatus.style.color = '#3fb950';
+      apiKeyTestStatus.innerHTML = `✅ ${data.message} (${data.provider} - Model: ${data.model})`;
+    } else {
+      apiKeyTestStatus.style.color = '#ff7b72';
+      apiKeyTestStatus.innerHTML = `❌ Thất bại: ${escapeHtml(data.error || 'API Key không hợp lệ')}`;
+    }
+  } catch (err) {
+    apiKeyTestStatus.style.color = '#ff7b72';
+    apiKeyTestStatus.innerHTML = `❌ Lỗi kết nối: ${escapeHtml(err.message)}`;
+  } finally {
+    testApiKeyBtn.disabled = false;
+    testApiKeyBtn.textContent = '⚡ Thử kết nối';
+  }
+}
+
+// Lưu cấu hình API Key vào LocalStorage
+function handleSaveApiKey() {
+  const key = apiKeyInput.value.trim();
+  const provider = keyProviderSelect.value;
+  const model = apiModelInput.value.trim() || (provider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-oss-120b');
+
+  if (!key) {
+    alert('Vui lòng nhập API Key hoặc bấm "Xóa Key" nếu không muốn sử dụng.');
+    apiKeyInput.focus();
+    return;
+  }
+
+  saveStoredApiConfig({
+    apiKey: key,
+    provider: provider,
+    model: model
+  });
+
+  fetchServerStatus();
+  apiKeyModal.classList.remove('active');
+  alert('Đã lưu cấu hình API Key thành công! Giờ đây hệ thống sẽ ưu tiên dùng key này để quét.');
+}
+
+// Xóa API Key khỏi LocalStorage
+function handleClearApiKey() {
+  if (confirm('Bạn có chắc chắn muốn xóa API Key đã lưu trên trình duyệt?')) {
+    clearStoredApiConfig();
+    apiKeyInput.value = '';
+    apiKeyTestStatus.style.display = 'none';
+    fetchServerStatus();
+    apiKeyModal.classList.remove('active');
+    alert('Đã xóa API Key thành công!');
+  }
 }
 
 // Xử lý Tải và Quét từ GitHub
@@ -515,10 +703,21 @@ async function handleScanAllFolder() {
 
     try {
       const startTime = Date.now();
+      const clientConfig = getStoredApiConfig();
+      const scanPayload = {
+        code: file.content,
+        language: file.language
+      };
+      if (clientConfig && clientConfig.apiKey) {
+        scanPayload.apiKey = clientConfig.apiKey;
+        scanPayload.provider = clientConfig.provider;
+        scanPayload.model = clientConfig.model;
+      }
+
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: file.content, language: file.language })
+        body: JSON.stringify(scanPayload)
       });
       const data = await res.json();
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -879,15 +1078,22 @@ async function handleScan() {
   `;
 
   const startTime = Date.now();
+  const clientConfig = getStoredApiConfig();
+  const scanPayload = {
+    code: code,
+    language: languageSelect.value
+  };
+  if (clientConfig && clientConfig.apiKey) {
+    scanPayload.apiKey = clientConfig.apiKey;
+    scanPayload.provider = clientConfig.provider;
+    scanPayload.model = clientConfig.model;
+  }
 
   try {
     const res = await fetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: code,
-        language: languageSelect.value
-      })
+      body: JSON.stringify(scanPayload)
     });
 
     const data = await res.json();

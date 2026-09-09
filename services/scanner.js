@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Security Code Reviewer & Web Scanner
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
@@ -57,6 +57,46 @@ export class ScannerService {
     return Boolean(this.apiKey && this.apiKey.trim().length > 0);
   }
 
+  createClient(apiKey, provider, baseURL) {
+    const key = apiKey ? apiKey.trim() : '';
+    if (!key) return null;
+
+    if (provider === 'groq' || key.startsWith('gsk_')) {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://api.groq.com/openai/v1',
+      });
+    }
+
+    return new OpenAI({
+      apiKey: key,
+      baseURL: baseURL || (this.isGithubModels ? 'https://models.github.ai/inference' : 'https://api.openai.com/v1'),
+    });
+  }
+
+  async testApiKey(apiKey, provider = 'groq', model = '') {
+    const key = apiKey ? apiKey.trim() : '';
+    if (!key) {
+      throw new Error('API Key không được để trống.');
+    }
+
+    const testClient = this.createClient(key, provider);
+    const targetModel = model || (provider === 'groq' || key.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
+
+    await testClient.chat.completions.create({
+      model: targetModel,
+      messages: [{ role: 'user', content: 'Reply OK' }],
+      max_tokens: 5
+    });
+
+    return {
+      success: true,
+      message: 'Kết nối API Key thành công!',
+      model: targetModel,
+      provider: provider === 'groq' || key.startsWith('gsk_') ? 'Groq Cloud AI' : 'OpenAI'
+    };
+  }
+
   generateSecurityPrompt(code, language = 'auto') {
     return `Bạn là một chuyên gia An toàn thông tin và Đánh giá mã nguồn (AppSec Expert & Code Auditor) với chuyên môn sâu về OWASP Top 10.
 Nhiệm vụ của bạn là phân tích đoạn mã nguồn dưới đây (ngôn ngữ: ${language}) và rà soát mọi lỗ hổng bảo mật tiềm ẩn.
@@ -108,16 +148,24 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
 `;
   }
 
-  async scanCode(code, language = 'auto') {
+  async scanCode(code, language = 'auto', customConfig = null) {
     if (!code || !code.trim()) {
       throw new Error("Mã nguồn không được để trống.");
     }
 
-    // Nếu có API key thật cấu hình
-    if (this.hasApiKey() && this.client) {
+    let activeClient = this.client;
+    let activeModel = this.model;
+
+    if (customConfig && customConfig.apiKey && customConfig.apiKey.trim()) {
+      activeClient = this.createClient(customConfig.apiKey, customConfig.provider, customConfig.baseURL);
+      activeModel = customConfig.model || (customConfig.provider === 'groq' || customConfig.apiKey.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
+    }
+
+    // Nếu có AI Client hợp lệ (từ client hoặc từ server env)
+    if (activeClient) {
       const prompt = this.generateSecurityPrompt(code, language);
-      const res = await this.client.chat.completions.create({
-        model: this.model,
+      const res = await activeClient.chat.completions.create({
+        model: activeModel,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
         response_format: { type: "json_object" }
@@ -129,7 +177,7 @@ ${code.split('\n').map((l, i) => `[L${i + 1}] ${l}`).join('\n')}
         return {
           ...parsed,
           source: 'ai_live',
-          model_used: this.model
+          model_used: activeModel
         };
       } catch (e) {
         throw new Error("Không thể parse kết quả JSON từ AI: " + raw);

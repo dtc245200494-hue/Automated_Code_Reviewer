@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI Security Code Reviewer & Web Scanner
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2025-2026 dtc245200494-hue & Contributors
@@ -79,9 +79,37 @@ app.post('/api/github/fetch-repo', async (req, res) => {
   }
 });
 
+// API: Kiểm tra API Key từ client
+app.post('/api/config/test-key', async (req, res) => {
+  const { apiKey, provider, model } = req.body;
+
+  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Vui lòng cung cấp API Key hợp lệ.'
+    });
+  }
+
+  try {
+    const testResult = await scannerService.testApiKey(apiKey, provider, model);
+    return res.json({
+      success: true,
+      message: testResult.message,
+      provider: testResult.provider,
+      model: testResult.model
+    });
+  } catch (err) {
+    console.error('Lỗi kiểm tra API Key:', err.message);
+    return res.status(400).json({
+      success: false,
+      error: err.message || 'API Key không hợp lệ hoặc không thể kết nối tới nhà cung cấp AI.'
+    });
+  }
+});
+
 // API: Quét lỗ hổng bảo mật trực tiếp
 app.post('/api/scan', async (req, res) => {
-  const { code, language } = req.body;
+  const { code, language, apiKey, provider, model, baseURL } = req.body;
 
   if (!code || typeof code !== 'string' || !code.trim()) {
     return res.status(400).json({
@@ -90,7 +118,8 @@ app.post('/api/scan', async (req, res) => {
   }
 
   try {
-    const result = await scannerService.scanCode(code, language || 'auto');
+    const customConfig = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? { apiKey, provider, model, baseURL } : null;
+    const result = await scannerService.scanCode(code, language || 'auto', customConfig);
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),

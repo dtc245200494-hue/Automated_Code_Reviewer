@@ -163,6 +163,18 @@ body {
   transition: all 0.2s ease;
 }
 
+.btn-apikey-nav {
+  background: linear-gradient(135deg, rgba(31, 111, 235, 0.15) 0%, rgba(0, 210, 255, 0.15) 100%);
+  border-color: rgba(56, 139, 253, 0.4);
+  color: #79c0ff;
+}
+
+.btn-apikey-nav:hover {
+  background: linear-gradient(135deg, rgba(31, 111, 235, 0.3) 0%, rgba(0, 210, 255, 0.3) 100%);
+  border-color: #58a6ff;
+  color: #ffffff;
+}
+
 .btn-github:hover {
   background-color: var(--border-color);
   border-color: var(--text-dim);
