@@ -256,56 +256,67 @@ function initMonacoEditor() {
 
 function updateMonacoDecorations(vulnerabilities = [], isDimmed = false) {
   if (!isMonacoLoaded || !monacoInstance || !window.monaco) return;
-  const model = monacoInstance.getModel();
-  if (!model) return;
+  try {
+    const model = monacoInstance.getModel();
+    if (!model) return;
 
-  const totalLines = model.getLineCount();
-  const newDecorations = [];
+    const totalLines = model.getLineCount();
+    const newDecorations = [];
 
-  vulnerabilities.forEach(v => {
-    let startLine = Number.parseInt(v.start_line || v.line_number, 10);
-    if (!Number.isFinite(startLine) || startLine < 1) startLine = 1;
-    if (startLine > totalLines) startLine = totalLines;
+    vulnerabilities.forEach(v => {
+      let startLine = Number.parseInt(v.start_line || v.line_number, 10);
+      if (!Number.isFinite(startLine) || startLine < 1) startLine = 1;
+      if (startLine > totalLines) startLine = totalLines;
 
-    let endLine = Number.parseInt(v.end_line || startLine, 10);
-    if (!Number.isFinite(endLine) || endLine < startLine) endLine = startLine;
-    if (endLine > totalLines) endLine = totalLines;
+      let endLine = Number.parseInt(v.end_line || startLine, 10);
+      if (!Number.isFinite(endLine) || endLine < startLine) endLine = startLine;
+      if (endLine > totalLines) endLine = totalLines;
 
-    const startCol = 1;
-    const endCol = model.getLineMaxColumn(endLine);
+      const startCol = 1;
+      const endCol = model.getLineMaxColumn(endLine);
 
-    const sev = (v.severity || 'Cao').toLowerCase();
-    let sevClass = 'monaco-vuln-range-high';
-    if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevClass = 'monaco-vuln-range-critical';
-    else if (sev.includes('thấp') || sev.includes('low')) sevClass = 'monaco-vuln-range-low';
-    else if (sev.includes('trung') || sev.includes('medium')) sevClass = 'monaco-vuln-range-medium';
+      const sev = (v.severity || 'Cao').toLowerCase();
+      let sevClass = 'monaco-vuln-range-high';
+      if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevClass = 'monaco-vuln-range-critical';
+      else if (sev.includes('thấp') || sev.includes('low')) sevClass = 'monaco-vuln-range-low';
+      else if (sev.includes('trung') || sev.includes('medium')) sevClass = 'monaco-vuln-range-medium';
 
-    const className = isDimmed ? `${sevClass} monaco-vuln-range-dimmed` : sevClass;
+      const className = isDimmed ? `${sevClass} monaco-vuln-range-dimmed` : sevClass;
 
-    const hoverMd = new window.monaco.MarkdownString();
-    hoverMd.isTrusted = true;
-    hoverMd.appendMarkdown(`**[${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}**\n\n`);
-    hoverMd.appendMarkdown(`- **Tiêu chuẩn**: \`${v.owasp_category || 'OWASP Top 10:2025'}\` | \`${v.cwe || 'CWE'}\`\n`);
-    hoverMd.appendMarkdown(`- **Độ tin cậy**: ${v.confidence || 'Cao'}\n\n`);
-    if (v.explanation) hoverMd.appendMarkdown(`**Giải thích:** ${v.explanation}\n\n`);
-    if (v.remediation) hoverMd.appendMarkdown(`**Khắc phục:** ${v.remediation}`);
+      const mdText = `**[${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}**\n\n`
+        + `- **Tiêu chuẩn**: \`${v.owasp_category || 'OWASP Top 10:2025'}\` | \`${v.cwe || 'CWE'}\`\n`
+        + `- **Độ tin cậy**: ${v.confidence || 'Cao'}\n\n`
+        + (v.explanation ? `**Giải thích:** ${v.explanation}\n\n` : '')
+        + (v.remediation ? `**Khắc phục:** ${v.remediation}` : '');
 
-    newDecorations.push({
-      range: new window.monaco.Range(startLine, startCol, endLine, endCol),
-      options: {
-        isWholeLine: true,
-        className: className,
-        glyphMarginClassName: 'monaco-vuln-glyph',
-        hoverMessage: hoverMd,
-        overviewRuler: {
-          color: sevClass.includes('critical') ? '#f85149' : (sevClass.includes('medium') ? '#d29922' : '#ff7b72'),
-          position: window.monaco.editor.OverviewRulerLane.Right
+      const hoverMessage = {
+        value: mdText,
+        isTrusted: true
+      };
+
+      const rangeObj = (window.monaco.Range && typeof window.monaco.Range === 'function')
+        ? new window.monaco.Range(startLine, startCol, endLine, endCol)
+        : { startLineNumber: startLine, startColumn: startCol, endLineNumber: endLine, endColumn: endCol };
+
+      newDecorations.push({
+        range: rangeObj,
+        options: {
+          isWholeLine: true,
+          className: className,
+          glyphMarginClassName: 'monaco-vuln-glyph',
+          hoverMessage: hoverMessage,
+          overviewRuler: {
+            color: sevClass.includes('critical') ? '#f85149' : (sevClass.includes('medium') ? '#d29922' : '#ff7b72'),
+            position: window.monaco.editor?.OverviewRulerLane?.Right || 2
+          }
         }
-      }
+      });
     });
-  });
 
-  monacoDecorations = monacoInstance.deltaDecorations(monacoDecorations, newDecorations);
+    monacoDecorations = monacoInstance.deltaDecorations(monacoDecorations, newDecorations);
+  } catch (err) {
+    console.warn('Lỗi khi cập nhật decorations trên Monaco Editor:', err);
+  }
 }
 
 function revealVulnerabilityInEditor(vuln) {
@@ -1828,7 +1839,12 @@ async function handleScan() {
       });
 
       switchViewTab('detail');
-      renderReport(data.result, duration);
+      try {
+        renderReport(data.result, duration);
+      } catch (renderErr) {
+        console.error('Lỗi khi hiển thị báo cáo quét:', renderErr);
+        renderError('Đã nhận kết quả quét nhưng gặp lỗi khi dựng giao diện: ' + renderErr.message);
+      }
     }
   } catch (err) {
     clearInterval(progressInterval);
