@@ -909,35 +909,44 @@ function setupEventListeners() {
   // GitHub Modal Events
   openGitModalBtn.addEventListener('click', () => {
     gitModal.classList.add('active');
+    gitModal.style.display = 'flex';
     gitRepoUrl.focus();
   });
 
   closeGitModalBtn.addEventListener('click', () => {
     gitModal.classList.remove('active');
+    gitModal.style.display = 'none';
   });
 
   cancelGitBtn.addEventListener('click', () => {
     gitModal.classList.remove('active');
+    gitModal.style.display = 'none';
   });
 
   submitGitBtn.addEventListener('click', handleFetchAndScanGit);
 
   gitModal.addEventListener('click', (e) => {
-    if (e.target === gitModal) gitModal.classList.remove('active');
+    if (e.target === gitModal) {
+      gitModal.classList.remove('active');
+      gitModal.style.display = 'none';
+    }
   });
 
   // Guide Modal Events
   viewGuideBtn.addEventListener('click', () => {
     guideModal.classList.add('active');
+    guideModal.style.display = 'flex';
   });
 
   closeModalBtn.addEventListener('click', () => {
     guideModal.classList.remove('active');
+    guideModal.style.display = 'none';
   });
 
   guideModal.addEventListener('click', (e) => {
     if (e.target === guideModal) {
       guideModal.classList.remove('active');
+      guideModal.style.display = 'none';
     }
   });
 
@@ -945,16 +954,19 @@ function setupEventListeners() {
   openApiKeyModalBtn.addEventListener('click', () => {
     loadApiKeyModalState();
     apiKeyModal.classList.add('active');
-    apiKeyInput.focus();
+    apiKeyModal.style.display = 'flex';
+    if (keyProviderSelect) keyProviderSelect.focus();
   });
 
   closeApiKeyModalBtn.addEventListener('click', () => {
     apiKeyModal.classList.remove('active');
+    apiKeyModal.style.display = 'none';
   });
 
   apiKeyModal.addEventListener('click', (e) => {
     if (e.target === apiKeyModal) {
       apiKeyModal.classList.remove('active');
+      apiKeyModal.style.display = 'none';
     }
   });
 
@@ -2942,7 +2954,14 @@ function setupAppSecStudioListeners() {
 
   // Drawer toggles
   document.getElementById('toggleDrawerBtn')?.addEventListener('click', () => toggleSecondaryDrawer());
-  document.getElementById('closeDrawerBtn')?.addEventListener('click', () => toggleSecondaryDrawer(true));
+  document.getElementById('closeDrawerBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSecondaryDrawer(false);
+  });
+  document.getElementById('closePaletteBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCommandPalette();
+  });
 
   // Drawer tabs
   document.querySelectorAll('.drawer-tab').forEach(tab => {
@@ -3144,10 +3163,13 @@ function setupAppSecStudioListeners() {
       return;
     }
 
-    // Escape: Close modals
+    // Escape: Close all modals and secondary drawer
     if (e.key === 'Escape') {
       closeCommandPalette();
       closeIgnoreModal();
+      if (gitModal) { gitModal.classList.remove('active'); gitModal.style.display = 'none'; }
+      if (guideModal) { guideModal.classList.remove('active'); guideModal.style.display = 'none'; }
+      if (apiKeyModal) { apiKeyModal.classList.remove('active'); apiKeyModal.style.display = 'none'; }
     }
   });
 
@@ -3157,6 +3179,40 @@ function setupAppSecStudioListeners() {
   });
   document.getElementById('ignoreReasonModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'ignoreReasonModal') closeIgnoreModal();
+  });
+
+  // Universal Click Delegation for all Close (X) buttons across the entire app
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.btn-close, .drawer-close-btn, .palette-close-btn, [data-dismiss="modal"]');
+    if (!closeBtn) return;
+
+    // 1. Secondary drawer close button or inside secondary drawer
+    if (closeBtn.id === 'closeDrawerBtn' || closeBtn.classList.contains('drawer-close-btn') || closeBtn.closest('#secondaryDrawer')) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSecondaryDrawer(false);
+      return;
+    }
+
+    // 2. Command palette close button
+    if (closeBtn.id === 'closePaletteBtn' || closeBtn.classList.contains('palette-close-btn') || closeBtn.closest('#commandPaletteModal')) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCommandPalette();
+      return;
+    }
+
+    // 3. Any modal overlay
+    const modal = closeBtn.closest('.modal-overlay');
+    if (modal) {
+      e.preventDefault();
+      e.stopPropagation();
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+      if (modal.id === 'ignoreReasonModal') {
+        pendingIgnoreFinding = null;
+      }
+    }
   });
 }
 

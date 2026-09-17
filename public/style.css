@@ -317,7 +317,7 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
-.sidebar-header {
+.folder-sidebar .sidebar-header {
   padding: 14px 16px;
   background-color: rgba(33, 38, 45, 0.8);
   border-bottom: 1px solid var(--border-color);
@@ -326,7 +326,7 @@ body {
   gap: 10px;
 }
 
-.sidebar-title {
+.folder-sidebar .sidebar-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1703,12 +1703,27 @@ body {
 }
 
 .btn-close {
-  background: none;
+  background: transparent;
   border: none;
   color: var(--text-muted);
   font-size: 1.6rem;
   cursor: pointer;
   line-height: 1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  user-select: none;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.btn-close:hover {
+  color: #ff7b72;
+  background-color: rgba(248, 81, 73, 0.18);
+  transform: scale(1.08);
 }
 
 .modal-body {
@@ -2108,51 +2123,106 @@ body {
   display: flex;
 }
 
-.explorer-toolbar {
+.explorer-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  gap: 6px;
-}
-
-.explorer-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  margin-bottom: 8px;
+  padding: 0 2px;
 }
 
 .explorer-meta-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-dim);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
-.explorer-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.explorer-btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 12px;
 }
 
 .btn-explorer-action {
-  font-size: 0.72rem;
-  font-weight: 500;
-  padding: 3px 8px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 5px;
+  border-radius: 7px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: all 0.15s;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  outline: none;
 }
 
-.btn-explorer-action:hover {
+.btn-explorer-action:active {
+  transform: scale(0.96);
+}
+
+.btn-action-icon {
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-action-label {
+  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* 1. File Upload Button: Vibrant Sky Blue Theme */
+.btn-explorer-action.btn-add-file {
+  background: linear-gradient(135deg, rgba(56, 139, 253, 0.24) 0%, rgba(31, 111, 235, 0.12) 100%);
+  border: 1px solid #388bfd;
   color: #79c0ff;
-  border-color: #388bfd;
-  background: rgba(56, 139, 253, 0.1);
+}
+
+.btn-explorer-action.btn-add-file:hover {
+  background: linear-gradient(135deg, rgba(56, 139, 253, 0.45) 0%, rgba(31, 111, 235, 0.3) 100%);
+  border-color: #79c0ff;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(56, 139, 253, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+/* 2. Folder Upload Button: Vibrant Warm Golden Amber Theme */
+.btn-explorer-action.btn-add-folder {
+  background: linear-gradient(135deg, rgba(210, 153, 34, 0.24) 0%, rgba(187, 128, 9, 0.12) 100%);
+  border: 1px solid #d29922;
+  color: #f2cc60;
+}
+
+.btn-explorer-action.btn-add-folder:hover {
+  background: linear-gradient(135deg, rgba(210, 153, 34, 0.45) 0%, rgba(187, 128, 9, 0.3) 100%);
+  border-color: #f2cc60;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(210, 153, 34, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+/* 3. Git Repo Button: Vibrant Git Orange Theme */
+.btn-explorer-action.btn-add-git {
+  background: linear-gradient(135deg, rgba(240, 80, 50, 0.26) 0%, rgba(218, 54, 51, 0.14) 100%);
+  border: 1px solid #f05032;
+  color: #ff8b7e;
+}
+
+.btn-explorer-action.btn-add-git:hover {
+  background: linear-gradient(135deg, rgba(240, 80, 50, 0.5) 0%, rgba(218, 54, 51, 0.32) 100%);
+  border-color: #ff8b7e;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(240, 80, 50, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
 }
 
 .sidebar-search input {
@@ -3020,15 +3090,24 @@ body {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 1.2rem;
+  font-size: 1.5rem;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  user-select: none;
+  z-index: 100;
+  pointer-events: auto;
 }
 
 .drawer-close-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  color: #ff7b72;
+  background: rgba(248, 81, 73, 0.18);
+  transform: scale(1.08);
 }
 
 .drawer-tabs {
@@ -3370,6 +3449,23 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-dim);
+}
+
+.palette-close-btn {
+  font-size: 1.4rem;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.palette-close-btn:hover {
+  color: #ff7b72;
+  background-color: rgba(248, 81, 73, 0.2);
 }
 
 .palette-results-list {
