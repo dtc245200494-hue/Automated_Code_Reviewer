@@ -12,18 +12,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { OpenAI } from 'openai';
 import { SAMPLES } from './data/samples.js';
 import { ScannerService } from './services/scanner.js';
 import { GitHubService } from './services/github.js';
+import {
+  UniversalAIClient,
+  normalizeUniversalEndpoint,
+  parseExtraHeaders
+} from './services/universal-ai.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ưu tiên đọc .env từ thư mục gốc repo hoặc thư mục web
-const rootEnvPath = path.resolve(__dirname, '../.env');
-if (fs.existsSync(rootEnvPath)) {
-  dotenv.config({ path: rootEnvPath });
+// Ưu tiên .env ngay trong project; nếu không có thì dotenv dùng cwd hiện tại.
+const projectEnvPath = path.resolve(__dirname, '.env');
+if (fs.existsSync(projectEnvPath)) {
+  dotenv.config({ path: projectEnvPath });
 } else {
   dotenv.config();
 }
@@ -37,51 +41,62 @@ const publicDir = path.join(__dirname, 'public');
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-function normalizeCustomEndpoint(value) {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  if (!raw) {
-    throw new Error('Custom API cần Endpoint/Base URL, ví dụ https://api.example.com/v1.');
-  }
+function normalizeUniversalConfig(body = {}) {
+  const protocol = typeof body.apiProtocol === 'string' && body.apiProtocol.trim()
+    ? body.apiProtocol.trim()
+    : 'openai-chat';
+  const endpoint = normalizeUniversalEndpoint(body.baseURL || body.endpoint || '');
+  const authType = typeof body.authType === 'string' && body.authType.trim()
+    ? body.authType.trim()
+    : 'auto';
+  const extraHeaders = parseExtraHeaders(body.extraHeaders || {});
 
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error('Endpoint Custom API không phải URL hợp lệ.');
-  }
-
-  if (parsed.username || parsed.password) {
-    throw new Error('Không đặt username/password trực tiếp trong URL Custom API.');
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
-  const isSecureRemote = parsed.protocol === 'https:';
-  const isLocalHttp = parsed.protocol === 'http:' && isLocalhost;
-
-  if (!isSecureRemote && !isLocalHttp) {
-    throw new Error('Custom API từ xa phải dùng HTTPS. HTTP chỉ được phép với localhost/127.0.0.1.');
-  }
-
-  return parsed.toString().replace(/\/+$/, '');
+  return {
+    protocol,
+    endpoint,
+    authType,
+    authHeaderName: typeof body.authHeaderName === 'string' ? body.authHeaderName.trim() : 'x-api-key',
+    queryParamName: typeof body.queryParamName === 'string' ? body.queryParamName.trim() : 'key',
+    extraHeaders,
+    requestTemplate: typeof body.requestTemplate === 'string' ? body.requestTemplate : '',
+    responsePath: typeof body.responsePath === 'string' ? body.responsePath.trim() : '',
+    timeoutMs: Number(body.timeoutMs) || 60000
+  };
 }
 
-// Với provider Custom, endpoint người dùng nhập phải được ưu tiên tuyệt đối,
-// không tự suy đoán provider theo prefix của API key (gsk_, sk-, ...).
+function packUniversalConfig(config) {
+  return `universal:${Buffer.from(JSON.stringify(config), 'utf8').toString('base64url')}`;
+}
+
+function unpackUniversalConfig(value) {
+  if (typeof value !== 'string' || !value.startsWith('universal:')) {
+    throw new Error('Thiếu cấu hình Universal AI API nội bộ.');
+  }
+  try {
+    return JSON.parse(Buffer.from(value.slice('universal:'.length), 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Cấu hình Universal AI API không hợp lệ.');
+  }
+}
+
+function getCustomKeys(apiKey, authType) {
+  const keys = scannerService.parseApiKeys(apiKey || '');
+  if (keys.length > 0) return keys;
+  if (authType === 'none') return ['__no_auth__'];
+  throw new Error('API Key không được để trống với kiểu xác thực hiện tại.');
+}
+
+// ScannerService giữ nguyên interface OpenAI-compatible. Với provider custom,
+// UniversalAIClient dịch giao thức khác về cùng shape choices[0].message.content.
 const createBuiltInClient = scannerService.createClient.bind(scannerService);
 scannerService.createClient = (apiKey, provider, baseURL) => {
   if (provider === 'custom') {
-    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
-    if (!key) return null;
-    return new OpenAI({
-      apiKey: key,
-      baseURL: normalizeCustomEndpoint(baseURL)
-    });
+    return new UniversalAIClient(apiKey, unpackUniversalConfig(baseURL));
   }
   return createBuiltInClient(apiKey, provider, baseURL);
 };
 
-// Chèn phần mở rộng Custom API vào giao diện mà không sửa app.js cũ.
+// Chèn phần mở rộng Universal AI API vào giao diện mà không sửa app.js cũ.
 app.get(['/', '/index.html'], (req, res, next) => {
   try {
     const indexPath = path.join(publicDir, 'index.html');
@@ -128,10 +143,7 @@ app.post('/api/github/fetch-repo', async (req, res) => {
 
   try {
     const data = await githubService.fetchRepoFiles(url, folder || '', token || '');
-    return res.json({
-      success: true,
-      data
-    });
+    return res.json({ success: true, data });
   } catch (err) {
     console.error('Lỗi tải từ GitHub:', err.message);
     return res.status(400).json({
@@ -141,43 +153,35 @@ app.post('/api/github/fetch-repo', async (req, res) => {
   }
 });
 
-// API: Kiểm tra API Key từ client
+// API: Kiểm tra API Key / Universal AI endpoint từ client
 app.post('/api/config/test-key', async (req, res) => {
-  const { apiKey, provider, model, baseURL } = req.body;
-
-  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
-    return res.status(400).json({
-      success: false,
-      error: 'Vui lòng cung cấp API Key hợp lệ.'
-    });
-  }
+  const { apiKey, provider, model } = req.body;
 
   try {
     if (provider === 'custom') {
-      const customModel = typeof model === 'string' ? model.trim() : '';
-      if (!customModel) {
-        throw new Error('Custom API cần tên Model.');
-      }
+      const targetModel = typeof model === 'string' ? model.trim() : '';
+      if (!targetModel) throw new Error('Universal AI API cần tên Model.');
 
-      const endpoint = normalizeCustomEndpoint(baseURL);
-      const keys = scannerService.parseApiKeys(apiKey);
-      if (keys.length === 0) {
-        throw new Error('API Key không được để trống.');
-      }
+      const config = normalizeUniversalConfig(req.body);
+      const keys = getCustomKeys(apiKey, config.authType);
+      const client = new UniversalAIClient(keys[0], config);
 
-      const client = scannerService.createClient(keys[0], 'custom', endpoint);
       await client.chat.completions.create({
-        model: customModel,
-        messages: [{ role: 'user', content: 'Reply OK' }],
-        max_tokens: 5
+        model: targetModel,
+        messages: [{ role: 'user', content: 'Reply only with OK' }],
+        max_tokens: 8
       });
 
       return res.json({
         success: true,
-        message: `Kết nối Custom API thành công! Đã nhận diện ${keys.length} API Key để chạy đa luồng.`,
-        provider: 'Custom API (OpenAI-compatible)',
-        model: customModel
+        message: `Kết nối Universal AI API thành công! Đã nhận diện ${config.authType === 'none' ? 0 : keys.length} API Key.`,
+        provider: `Universal AI (${config.protocol})`,
+        model: targetModel
       });
+    }
+
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ success: false, error: 'Vui lòng cung cấp API Key hợp lệ.' });
     }
 
     const testResult = await scannerService.testApiKey(apiKey, provider, model);
@@ -191,7 +195,7 @@ app.post('/api/config/test-key', async (req, res) => {
     console.error('Lỗi kiểm tra API Key:', err.message);
     return res.status(400).json({
       success: false,
-      error: err.message || 'API Key không hợp lệ hoặc không thể kết nối tới nhà cung cấp AI.'
+      error: err.message || 'API Key hoặc cấu hình API không hợp lệ.'
     });
   }
 });
@@ -202,25 +206,32 @@ app.post('/api/scan', async (req, res) => {
 
   if (!code || typeof code !== 'string' || !code.trim()) {
     return res.status(400).json({
+      success: false,
       error: 'Vui lòng cung cấp mã nguồn cần quét (trường "code").'
     });
   }
 
   try {
-    let normalizedBaseURL = baseURL;
+    let customConfig = null;
+
     if (provider === 'custom') {
-      if (!model || typeof model !== 'string' || !model.trim()) {
-        return res.status(400).json({
-          success: false,
-          error: 'Custom API cần tên Model.'
-        });
+      const targetModel = typeof model === 'string' ? model.trim() : '';
+      if (!targetModel) {
+        return res.status(400).json({ success: false, error: 'Universal AI API cần tên Model.' });
       }
-      normalizedBaseURL = normalizeCustomEndpoint(baseURL);
+
+      const universalConfig = normalizeUniversalConfig(req.body);
+      const keys = getCustomKeys(apiKey, universalConfig.authType);
+      customConfig = {
+        apiKey: keys.join('\n'),
+        provider: 'custom',
+        model: targetModel,
+        baseURL: packUniversalConfig(universalConfig)
+      };
+    } else if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+      customConfig = { apiKey, provider, model, baseURL };
     }
 
-    const customConfig = (apiKey && typeof apiKey === 'string' && apiKey.trim())
-      ? { apiKey, provider, model, baseURL: normalizedBaseURL }
-      : null;
     const result = await scannerService.scanCode(code, language || 'auto', customConfig);
     return res.json({
       success: true,
@@ -237,9 +248,9 @@ app.post('/api/scan', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`🛡️  AI SECURITY BOT - WEB APPLICATION ĐÃ KHỞI CHẠY`);
+  console.log('====================================================');
+  console.log('🛡️  AI SECURITY BOT - WEB APPLICATION ĐÃ KHỞI CHẠY');
   console.log(`🌐  Truy cập giao diện: http://localhost:${PORT}`);
   console.log(`🔑  Trạng thái AI Key: ${scannerService.hasApiKey() ? 'ĐÃ KẾT NỐI' : 'CHƯA CẤU HÌNH (dùng Heuristic Mode)'}`);
-  console.log(`====================================================`);
+  console.log('====================================================');
 });
