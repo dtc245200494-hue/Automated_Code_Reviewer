@@ -1797,6 +1797,32 @@ async function handleScan() {
     scanPayload.model = clientConfig.model;
   }
 
+async function safeParseApiResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      return await res.json();
+    } catch {
+      // Fall through if json parse failed
+    }
+  }
+  const text = await res.text();
+  if (res.status === 504) {
+    throw new Error('Máy chủ phản hồi HTTP 504 (Gateway Timeout): Quá trình phân tích tệp mã nguồn lớn bị quá thời gian chờ proxy (180s).');
+  } else if (res.status === 502) {
+    throw new Error('Máy chủ phản hồi HTTP 502 (Bad Gateway): Tiến trình AI backend đang bận hoặc khởi động lại.');
+  } else if (res.status === 413) {
+    throw new Error('Máy chủ phản hồi HTTP 413 (Payload Too Large): Kích thước mã nguồn vượt quá giới hạn.');
+  } else if (!res.ok) {
+    throw new Error(`Máy chủ phản hồi mã lỗi HTTP ${res.status}: ${res.statusText || 'Lỗi kết nối'}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Máy chủ không trả về JSON hợp lệ (HTTP ${res.status}): ${text.slice(0, 100)}`);
+  }
+}
+
   try {
     const res = await fetch('/api/scan', {
       method: 'POST',
@@ -1808,7 +1834,7 @@ async function handleScan() {
     if (barFill) barFill.style.width = '100%';
     if (stageText) stageText.textContent = 'Hoàn tất phân tích 100%!';
 
-    const data = await res.json();
+    const data = await safeParseApiResponse(res);
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
     if (!res.ok || !data.success) {
