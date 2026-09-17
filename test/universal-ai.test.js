@@ -115,3 +115,28 @@ test('Generic JSON adapter supports custom header, template placeholders and res
   assert.match(mock.calls[0].body.input, /scan me/);
   assert.equal(result.choices[0].message.content, '{"vulnerabilities":[]}');
 });
+
+test('SSRF: cloud metadata is strictly blocked in all environments', () => {
+  assert.throws(() => normalizeUniversalEndpoint('http://169.254.169.254/latest/meta-data'), /cloud metadata/);
+  assert.throws(() => normalizeUniversalEndpoint('http://metadata.google.internal/computeMetadata/v1'), /cloud metadata/);
+});
+
+test('SSRF: private IP, loopback, and internal hosts are blocked when IS_PUBLIC=true', () => {
+  const origPublic = process.env.IS_PUBLIC;
+  try {
+    process.env.IS_PUBLIC = 'true';
+    assert.throws(() => normalizeUniversalEndpoint('http://localhost:11434'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('http://127.0.0.1:8080'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('https://10.0.0.1/api'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('https://192.168.1.1/api'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('https://172.16.0.5/api'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('https://backend.internal/api'), /nội bộ/);
+    assert.throws(() => normalizeUniversalEndpoint('https://redis/api'), /nội bộ/);
+
+    // Public HTTPS endpoint is allowed
+    assert.equal(normalizeUniversalEndpoint('https://api.openai.com/v1'), 'https://api.openai.com/v1');
+  } finally {
+    if (origPublic) process.env.IS_PUBLIC = origPublic; else delete process.env.IS_PUBLIC;
+  }
+});
+

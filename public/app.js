@@ -142,7 +142,40 @@ function saveScanHistoryItem(item) {
       ...item
     });
     if (history.length > 30) history.pop();
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (quotaErr) {
+      console.warn('LocalStorage quota reached, pruning source code content from snapshots...', quotaErr);
+      // Khi vượt quota trình duyệt, cắt tỉa source content để giữ lại thông tin báo cáo
+      const lightHistory = history.map(h => {
+        if (!h.snapshotFiles) return h;
+        return {
+          ...h,
+          code: (h.code && h.code.length > 3000) ? h.code.slice(0, 3000) + '\n...[cắt bớt do dung lượng bộ nhớ]' : h.code,
+          snapshotFiles: h.snapshotFiles.map(sf => ({
+            name: sf.name,
+            path: sf.path,
+            language: sf.language,
+            duration: sf.duration,
+            result: sf.result,
+            scanError: sf.scanError
+          }))
+        };
+      });
+      while (lightHistory.length > 15) lightHistory.pop();
+      try {
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(lightHistory));
+      } catch (innerErr) {
+        // Nếu vẫn không đủ dung lượng, chỉ giữ 5 bản ghi mới nhất không có snapshot
+        const minimalHistory = lightHistory.slice(0, 5).map(h => ({
+          ...h,
+          code: '',
+          snapshotFiles: []
+        }));
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(minimalHistory));
+      }
+    }
     updateHistoryBadge();
   } catch (e) {
     console.error('Không thể lưu lịch sử quét:', e);
@@ -321,8 +354,12 @@ function renderFileTree() {
     item.className = `tree-file-item ${index === activeFileIndex ? 'active' : ''}`;
     
     let badgeHtml = '';
-    if (file.result) {
-      if (file.result.is_safe) {
+    if (file.scanError) {
+      badgeHtml = `<span class="tree-badge vuln" style="background: rgba(248, 81, 73, 0.2); color: #ff7b72;">Lỗi</span>`;
+    } else if (file.result) {
+      if (file.result.incomplete) {
+        badgeHtml = `<span class="tree-badge" style="background: rgba(210, 153, 34, 0.2); color: #d29922;">Chưa xong</span>`;
+      } else if (file.result.is_safe) {
         badgeHtml = `<span class="tree-badge safe">Clean</span>`;
       } else {
         const count = file.result.vulnerabilities ? file.result.vulnerabilities.length : 1;
@@ -854,7 +891,9 @@ async function handleScanAllFolder() {
   scanAllFolderBtn.textContent = '⏳ Đang quét toàn bộ...';
 
   let totalVulns = 0;
-  let scannedCount = 0;
+  let successCount = 0;
+  let failedCount = 0;
+  let incompleteCount = 0;
   let vulnFilesCount = 0;
 
   for (let i = 0; i < uploadedFiles.length; i++) {
@@ -908,18 +947,30 @@ async function handleScanAllFolder() {
       const data = await res.json();
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      if (data.success) {
+      if (res.ok && data.success && data.result) {
         file.result = data.result;
         file.duration = duration;
-        if (!data.result.is_safe && data.result.vulnerabilities) {
+        file.scanError = null;
+        successCount++;
+        if (data.result.incomplete) {
+          incompleteCount++;
+        }
+        if (!data.result.is_safe && data.result.vulnerabilities && data.result.vulnerabilities.length > 0) {
           totalVulns += data.result.vulnerabilities.length;
           vulnFilesCount++;
         }
+      } else {
+        failedCount++;
+        file.result = null;
+        file.scanError = data.error || data.message || `Lỗi HTTP ${res.status}`;
       }
-      scannedCount++;
       renderFileTree();
     } catch (err) {
       console.error(err);
+      failedCount++;
+      file.result = null;
+      file.scanError = err.message || 'Lỗi kết nối';
+      renderFileTree();
     }
   }
 
@@ -936,22 +987,41 @@ async function handleScanAllFolder() {
     summaryAlertBadge.style.display = 'none';
   }
 
+  // Xác định trạng thái chính xác: chỉ safe khi tất cả file thành công và is_safe === true
+  let scanStatus = 'safe';
+  if (totalVulns > 0) {
+    scanStatus = 'vulnerable';
+  } else if (failedCount > 0) {
+    scanStatus = successCount > 0 ? 'partial_error' : 'error';
+  } else if (incompleteCount > 0) {
+    scanStatus = 'incomplete';
+  } else if (successCount === uploadedFiles.length && uploadedFiles.length > 0) {
+    const allClean = uploadedFiles.every(f => f.result && f.result.is_safe === true);
+    scanStatus = allClean ? 'safe' : 'vulnerable';
+  } else {
+    scanStatus = 'error';
+  }
+
   // Tự động lưu kết quả quét toàn bộ thư mục vào Lịch sử (kèm snapshot để khôi phục)
   saveScanHistoryItem({
     type: 'folder_scan',
-    title: `Quét thư mục (${scannedCount} file)`,
+    title: `Quét thư mục (${successCount}/${uploadedFiles.length} file)`,
     total_files: uploadedFiles.length,
-    scanned_files: scannedCount,
+    scanned_files: successCount,
+    success_files: successCount,
+    failed_files: failedCount,
+    incomplete_files: incompleteCount,
     vuln_files: vulnFilesCount,
     total_vulns: totalVulns,
-    status: totalVulns > 0 ? 'vulnerable' : 'safe',
+    status: scanStatus,
     snapshotFiles: uploadedFiles.map(f => ({
       name: f.name,
       path: f.path,
       content: f.content,
       language: f.language,
       duration: f.duration,
-      result: f.result
+      result: f.result,
+      scanError: f.scanError || null
     }))
   });
 
@@ -966,10 +1036,17 @@ function renderFolderSummaryDashboard() {
   let safeFiles = 0;
   let vulnFiles = 0;
   let totalVulns = 0;
+  let failedFiles = 0;
+  let incompleteFiles = 0;
 
   uploadedFiles.forEach(f => {
-    if (f.result) {
+    if (f.scanError) {
+      failedFiles++;
+    } else if (f.result) {
       scannedFiles++;
+      if (f.result.incomplete) {
+        incompleteFiles++;
+      }
       if (f.result.is_safe) {
         safeFiles++;
       } else {
@@ -981,9 +1058,36 @@ function renderFolderSummaryDashboard() {
 
   resultMeta.innerHTML = `
     <span style="font-size:0.75rem; color:var(--text-dim); background:var(--bg-card); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color);">
-      📊 Tổng quan | ${scannedFiles}/${totalFiles} file đã quét
+      📊 Tổng quan | ${scannedFiles}/${totalFiles} file đã quét ${failedFiles > 0 ? `(${failedFiles} file lỗi)` : ''}
     </span>
   `;
+
+  let bannerClass = 'safe';
+  let bannerIcon = '🛡️';
+  let bannerTitle = 'TẤT CẢ FILE ĐÃ QUÉT ĐỀU AN TOÀN (LGTM)';
+  let bannerDesc = 'Không phát hiện thấy dấu hiệu lỗ hổng nghiêm trọng nào trong thư mục.';
+
+  if (totalVulns > 0) {
+    bannerClass = 'vulnerable';
+    bannerIcon = '🚨';
+    bannerTitle = `PHÁT HIỆN ${totalVulns} NGUY CƠ BẢO MẬT TRONG DỰ ÁN`;
+    bannerDesc = `Có ${vulnFiles} tệp mã nguồn chứa lỗ hổng nguy hiểm theo tiêu chuẩn OWASP Top 10 cần được xử lý ngay.`;
+  } else if (failedFiles > 0) {
+    bannerClass = 'vulnerable';
+    bannerIcon = '⚠️';
+    bannerTitle = `CÓ ${failedFiles}/${totalFiles} FILE QUÉT BỊ LỖI - CHƯA THỂ KẾT LUẬN AN TOÀN`;
+    bannerDesc = 'Một số file không thể quét thành công (lỗi mạng hoặc API). Hãy kiểm tra lại kết nối và thử quét lại.';
+  } else if (incompleteFiles > 0) {
+    bannerClass = 'vulnerable';
+    bannerIcon = '⚠️';
+    bannerTitle = `CÓ ${incompleteFiles} FILE QUÉT CHƯA HOÀN TẤT ĐẦY ĐỦ`;
+    bannerDesc = 'Một số tệp có phân đoạn quét chưa hoàn tất hoặc gặp giới hạn token AI.';
+  } else if (scannedFiles < totalFiles) {
+    bannerClass = 'vulnerable';
+    bannerIcon = 'ℹ️';
+    bannerTitle = `MỚI QUÉT ${scannedFiles}/${totalFiles} FILE - CHƯA QUÉT TOÀN BỘ`;
+    bannerDesc = 'Bấm "⚡ Quét tất cả file" để hệ thống rà soát toàn bộ thư mục.';
+  }
 
   let html = `
     <div class="dashboard-stats-grid">
@@ -1000,16 +1104,16 @@ function renderFolderSummaryDashboard() {
         <span class="stat-val ${vulnFiles > 0 ? 'critical' : 'safe'}">${vulnFiles}</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Tổng số lỗ hổng</span>
-        <span class="stat-val ${totalVulns > 0 ? 'critical' : 'safe'}">${totalVulns}</span>
+        <span class="stat-label">${failedFiles > 0 ? 'File quét lỗi' : 'Tổng số lỗ hổng'}</span>
+        <span class="stat-val ${totalVulns > 0 || failedFiles > 0 ? 'critical' : 'safe'}">${failedFiles > 0 ? failedFiles : totalVulns}</span>
       </div>
     </div>
 
-    <div class="report-header-banner ${totalVulns > 0 ? 'vulnerable' : 'safe'}" style="margin-bottom: 16px;">
-      <div class="banner-status-icon">${totalVulns > 0 ? '🚨' : '🛡️'}</div>
+    <div class="report-header-banner ${bannerClass}" style="margin-bottom: 16px;">
+      <div class="banner-status-icon">${bannerIcon}</div>
       <div class="banner-status-info">
-        <h3>${totalVulns > 0 ? `PHÁT HIỆN ${totalVulns} NGUY CƠ BẢO MẬT TRONG DỰ ÁN` : 'TẤT CẢ FILE ĐÃ QUÉT ĐỀU AN TOÀN (LGTM)'}</h3>
-        <p>${totalVulns > 0 ? `Có ${vulnFiles} tệp mã nguồn chứa lỗ hổng nguy hiểm theo tiêu chuẩn OWASP Top 10 cần được xử lý ngay.` : 'Không phát hiện thấy dấu hiệu lỗ hổng nghiêm trọng nào trong thư mục.'}</p>
+        <h3>${bannerTitle}</h3>
+        <p>${bannerDesc}</p>
       </div>
     </div>
 
@@ -1025,8 +1129,14 @@ function renderFolderSummaryDashboard() {
     let statusText = '<span style="color:var(--text-dim);font-size:0.75rem;">Chưa quét</span>';
     let descText = 'Nhấn vào file để xem code và bắt đầu quét';
 
-    if (file.result) {
-      if (file.result.is_safe) {
+    if (file.scanError) {
+      statusText = '<span class="tree-badge vuln" style="background: rgba(248,81,73,0.2); color:#ff7b72;">❌ Lỗi quét</span>';
+      descText = `Lỗi: ${file.scanError}`;
+    } else if (file.result) {
+      if (file.result.incomplete) {
+        statusText = '<span class="tree-badge" style="background: rgba(210,153,34,0.2); color:#d29922;">⚠️ Chưa xong</span>';
+        descText = file.result.overall_summary || 'Quét chưa hoàn tất đầy đủ';
+      } else if (file.result.is_safe) {
         statusText = '<span class="tree-badge safe">✓ An toàn</span>';
         descText = file.result.overall_summary || 'Không có lỗ hổng';
       } else {
@@ -1091,8 +1201,16 @@ function renderHistoryDashboard() {
   history.forEach((item, index) => {
     const timeStr = new Date(item.timestamp).toLocaleString('vi-VN');
     const isVuln = item.status === 'vulnerable' || (item.total_vulns && item.total_vulns > 0);
-    const badgeClass = isVuln ? 'severity-cao' : 'severity-thấp';
-    const badgeText = isVuln ? `⚠️ ${item.total_vulns} Lỗ hổng` : (item.status === 'loaded' ? 'ℹ️ Đã nạp Git' : '✓ An toàn');
+    const isErr = item.status === 'error' || item.status === 'partial_error';
+    const isIncomplete = item.status === 'incomplete';
+    const badgeClass = isVuln ? 'severity-cao' : (isErr ? 'severity-cao' : (isIncomplete ? 'severity-trung-bình' : 'severity-thấp'));
+    const badgeText = isVuln
+      ? `⚠️ ${item.total_vulns} Lỗ hổng`
+      : (isErr
+          ? `❌ Lỗi quét (${item.failed_files || 0} file lỗi)`
+          : (isIncomplete
+              ? '⚠️ Chưa quét hết'
+              : (item.status === 'loaded' ? 'ℹ️ Đã nạp Git' : '✓ An toàn')));
     const isFolder = (item.type === 'folder_scan' || item.type === 'git_repo');
     const subFiles = item.snapshotFiles || [];
 
@@ -1132,16 +1250,30 @@ function renderHistoryDashboard() {
           <div id="historySubFiles_${index}" class="history-subfiles-list" style="display: none;">
             <div class="subfiles-note">Danh sách các file trong lần quét này (Bấm vào file để xem chi tiết lỗ hổng):</div>
             ${subFiles.map((sf, fileIdx) => {
-              const sfSafe = sf.result ? sf.result.is_safe : true;
+              const sfHasError = Boolean(sf.scanError);
+              const sfScanned = Boolean(sf.result);
+              const sfSafe = sfScanned && !sfHasError && sf.result.is_safe === true;
               const sfCount = sf.result && sf.result.vulnerabilities ? sf.result.vulnerabilities.length : 0;
+              let chipClass = 'safe';
+              let badgeLabel = 'Clean';
+              if (sfHasError) {
+                chipClass = 'vuln';
+                badgeLabel = 'Lỗi';
+              } else if (!sfScanned) {
+                chipClass = '';
+                badgeLabel = 'Chưa quét';
+              } else if (!sfSafe) {
+                chipClass = 'vuln';
+                badgeLabel = `${sfCount} Lỗi`;
+              }
               return `
                 <div class="history-subfile-item" onclick="restoreHistorySubFile(${index}, ${fileIdx})">
                   <div class="subfile-left">
-                    <span class="file-chip-status ${sfSafe ? 'safe' : 'vuln'}"></span>
+                    <span class="file-chip-status ${chipClass}"></span>
                     <span class="subfile-path">${escapeHtml(sf.path || sf.name)}</span>
                   </div>
-                  <span class="tree-badge ${sfSafe ? 'safe' : 'vuln'}">
-                    ${sfSafe ? 'Clean' : `${sfCount} Lỗi`}
+                  <span class="tree-badge ${chipClass}">
+                    ${badgeLabel}
                   </span>
                 </div>
               `;
@@ -1361,7 +1493,7 @@ async function handleScan() {
         language: languageSelect.value,
         code: code,
         duration: duration,
-        status: data.result.is_safe ? 'safe' : 'vulnerable',
+        status: !data.result.is_safe ? 'vulnerable' : (data.result.incomplete ? 'incomplete' : 'safe'),
         total_vulns: data.result.vulnerabilities ? data.result.vulnerabilities.length : 0,
         summary: data.result.overall_summary,
         result: data.result

@@ -142,3 +142,59 @@ test('12. slash-containing GitHub branch tail is preserved for resolution', () =
   assert.equal(parsed.repo, 'project');
   assert.equal(parsed.treeTail, 'feature/login/fix/src');
 });
+
+test('13. OPENAI_API_KEY with sk- prefix defaults to OpenAI when AI_PROVIDER is not set', () => {
+  const origKey = process.env.OPENAI_API_KEY;
+  const origProv = process.env.AI_PROVIDER;
+  const origEndpoint = process.env.OPENAI_API_ENDPOINT;
+  try {
+    delete process.env.AI_PROVIDER;
+    delete process.env.OPENAI_API_ENDPOINT;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OPENCODE_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-proj-test1234567890abcdef';
+    const svc = new ScannerService();
+    assert.equal(svc.provider, 'OpenAI');
+    assert.equal(svc.isOpenCode, false);
+    assert.equal(svc.isOpenAI, true);
+  } finally {
+    if (origKey) process.env.OPENAI_API_KEY = origKey; else delete process.env.OPENAI_API_KEY;
+    if (origProv) process.env.AI_PROVIDER = origProv; else delete process.env.AI_PROVIDER;
+    if (origEndpoint) process.env.OPENAI_API_ENDPOINT = origEndpoint; else delete process.env.OPENAI_API_ENDPOINT;
+  }
+});
+
+test('14. AI_PROVIDER=opencode explicitly sets OpenCode provider', () => {
+  const origKey = process.env.OPENAI_API_KEY;
+  const origProv = process.env.AI_PROVIDER;
+  try {
+    process.env.AI_PROVIDER = 'opencode';
+    process.env.OPENAI_API_KEY = 'sk-anykey12345';
+    const svc = new ScannerService();
+    assert.equal(svc.provider, 'OpenCode.ai');
+    assert.equal(svc.isOpenCode, true);
+    assert.equal(svc.model, 'deepseek-v4-flash-free');
+  } finally {
+    if (origKey) process.env.OPENAI_API_KEY = origKey; else delete process.env.OPENAI_API_KEY;
+    if (origProv) process.env.AI_PROVIDER = origProv; else delete process.env.AI_PROVIDER;
+  }
+});
+
+test('15. OPENAI_API_ENDPOINT pointing to opencode.ai sets OpenCode provider', () => {
+  const origKey = process.env.OPENAI_API_KEY;
+  const origProv = process.env.AI_PROVIDER;
+  const origEndpoint = process.env.OPENAI_API_ENDPOINT;
+  try {
+    delete process.env.AI_PROVIDER;
+    process.env.OPENAI_API_ENDPOINT = 'https://opencode.ai/zen/v1';
+    process.env.OPENAI_API_KEY = 'sk-test12345';
+    const svc = new ScannerService();
+    assert.equal(svc.provider, 'OpenCode.ai');
+    assert.equal(svc.isOpenCode, true);
+  } finally {
+    if (origKey) process.env.OPENAI_API_KEY = origKey; else delete process.env.OPENAI_API_KEY;
+    if (origProv) process.env.AI_PROVIDER = origProv; else delete process.env.AI_PROVIDER;
+    if (origEndpoint) process.env.OPENAI_API_ENDPOINT = origEndpoint; else delete process.env.OPENAI_API_ENDPOINT;
+  }
+});
+

@@ -1,3 +1,5 @@
+import net from 'net';
+
 const SUPPORTED_PROTOCOLS = new Set([
   'openai-chat',
   'openai-responses',
@@ -13,6 +15,69 @@ const BLOCKED_HEADER_NAMES = new Set([
   'connection',
   'transfer-encoding'
 ]);
+
+export function isCloudMetadataHost(hostname) {
+  const norm = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (norm === '169.254.169.254' || norm === 'metadata.google.internal' || norm === 'instance-data') {
+    return true;
+  }
+  if (net.isIPv4(norm)) {
+    const parts = norm.split('.').map(Number);
+    if (parts[0] === 169 && parts[1] === 254) return true;
+  }
+  return false;
+}
+
+export function isLoopbackHost(hostname) {
+  const norm = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (norm === 'localhost' || norm.endsWith('.localhost')) return true;
+  if (norm === '127.0.0.1' || norm === '::1' || norm === '0.0.0.0') return true;
+  if (net.isIPv4(norm)) {
+    const parts = norm.split('.').map(Number);
+    if (parts[0] === 127 || parts[0] === 0) return true;
+  }
+  if (net.isIPv6(norm)) {
+    if (norm === '::' || norm === '0:0:0:0:0:0:0:1' || norm === '0:0:0:0:0:0:0:0') return true;
+  }
+  return false;
+}
+
+export function isPrivateOrInternalHost(hostname) {
+  const norm = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (isCloudMetadataHost(norm) || isLoopbackHost(norm)) return true;
+
+  if (net.isIPv4(norm)) {
+    const parts = norm.split('.').map(Number);
+    // 10.0.0.0/8
+    if (parts[0] === 10) return true;
+    // 172.16.0.0/12
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    // 192.168.0.0/16
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    // 100.64.0.0/10 Carrier-grade NAT
+    if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+    // Multicast / Reserved
+    if (parts[0] >= 224) return true;
+    return false;
+  }
+
+  if (net.isIPv6(norm)) {
+    // Unique local address fc00::/7 (fc.. or fd..)
+    if (norm.startsWith('fc') || norm.startsWith('fd')) return true;
+    // Link-local fe80::/10
+    if (norm.startsWith('fe8') || norm.startsWith('fe9') || norm.startsWith('fea') || norm.startsWith('feb')) return true;
+    return false;
+  }
+
+  // Internal domain extensions
+  const internalSuffixes = ['.local', '.internal', '.lan', '.corp', '.home', '.intranet'];
+  if (internalSuffixes.some(suffix => norm.endsWith(suffix))) return true;
+
+  // Single-label hostname without dot (e.g., 'redis', 'database', 'backend')
+  if (!norm.includes('.')) return true;
+
+  return false;
+}
 
 export function normalizeUniversalEndpoint(value) {
   const raw = typeof value === 'string' ? value.trim() : '';
@@ -30,10 +95,32 @@ export function normalizeUniversalEndpoint(value) {
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  const isLocalhost = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
-  const allowed = parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalhost);
-  if (!allowed) {
-    throw new Error('API từ xa phải dùng HTTPS. HTTP chỉ được phép với localhost/127.0.0.1.');
+
+  // 1. Tuyệt đối chặn link-local và cloud metadata (169.254.x.x, metadata.google.internal) trong mọi môi trường
+  if (isCloudMetadataHost(hostname)) {
+    throw new Error('Endpoint bị từ chối: Không được phép gọi dịch vụ cloud metadata / link-local.');
+  }
+
+  const isPublicEnv = process.env.IS_PUBLIC === 'true' ||
+                      process.env.NODE_ENV === 'production' ||
+                      process.env.BLOCK_INTERNAL_ENDPOINTS === 'true';
+  const allowPrivate = process.env.ALLOW_PRIVATE_ENDPOINTS === 'true';
+
+  // 2. Khi chạy public / production: Chặn loopback và private network để phòng chống SSRF
+  if (isPublicEnv && !allowPrivate) {
+    if (isPrivateOrInternalHost(hostname)) {
+      throw new Error('Endpoint bị từ chối: Không được phép gọi địa chỉ nội bộ (private/loopback/internal) trên máy chủ công khai.');
+    }
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Môi trường công khai yêu cầu API từ xa phải dùng giao thức bảo mật HTTPS.');
+    }
+  } else {
+    // Chạy local cá nhân: Cho phép localhost/127.0.0.1 dùng HTTP (phục vụ Ollama, LM Studio...)
+    const isLocalhost = isLoopbackHost(hostname);
+    const allowed = parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalhost);
+    if (!allowed) {
+      throw new Error('API từ xa phải dùng HTTPS. HTTP chỉ được phép với localhost/127.0.0.1.');
+    }
   }
 
   return raw.replace(/\/+$/, '');

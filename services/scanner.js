@@ -90,55 +90,81 @@ async function mapWithConcurrency(items, concurrency, worker) {
 
 export class ScannerService {
   constructor() {
-    this.groqKey = process.env.GROQ_API_KEY || (process.env.OPENAI_API_KEY?.startsWith('gsk_') ? process.env.OPENAI_API_KEY : '');
-    this.opencodeKey = process.env.OPENAI_API_KEY?.startsWith('sk-') ? process.env.OPENAI_API_KEY : '';
-    this.openaiKey = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('gsk_') && !process.env.OPENAI_API_KEY.startsWith('sk-') ? process.env.OPENAI_API_KEY : '';
+    const rawProvider = (process.env.AI_PROVIDER || '').trim().toLowerCase();
+    const envKey = process.env.OPENAI_API_KEY || '';
+    const groqEnvKey = process.env.GROQ_API_KEY || '';
+    const opencodeEnvKey = process.env.OPENCODE_API_KEY || '';
+    const endpoint = (process.env.OPENAI_API_ENDPOINT || '').trim();
 
-    this.isGroq = Boolean(this.groqKey);
-    this.isOpenCode = Boolean(this.opencodeKey);
     this.isAzure = Boolean(process.env.AZURE_API_VERSION && process.env.AZURE_DEPLOYMENT);
     this.isGithubModels = process.env.USE_GITHUB_MODELS === 'true';
 
+    // Xác định provider rõ ràng: Ưu tiên AI_PROVIDER nếu có
+    let chosenProvider = '';
+    if (rawProvider) {
+      chosenProvider = rawProvider;
+    } else if (opencodeEnvKey || endpoint.includes('opencode.ai')) {
+      chosenProvider = 'opencode';
+    } else if (groqEnvKey || envKey.startsWith('gsk_')) {
+      chosenProvider = 'groq';
+    } else if (this.isAzure || rawProvider === 'azure') {
+      chosenProvider = 'azure';
+    } else if (this.isGithubModels || rawProvider === 'github') {
+      chosenProvider = 'github';
+    } else if (envKey) {
+      chosenProvider = 'openai';
+    }
+
+    this.isOpenCode = chosenProvider === 'opencode';
+    this.isGroq = chosenProvider === 'groq';
+    this.isOpenAI = chosenProvider === 'openai';
+
     if (this.isOpenCode) {
-      this.apiKey = this.opencodeKey;
+      this.apiKey = opencodeEnvKey || envKey;
       this.model = process.env.MODEL || 'deepseek-v4-flash-free';
       this.provider = 'OpenCode.ai';
-      this.client = new OpenAI({
-        apiKey: this.opencodeKey,
-        baseURL: process.env.OPENAI_API_ENDPOINT || 'https://opencode.ai/zen/v1',
-      });
+      this.client = this.apiKey ? new OpenAI({
+        apiKey: this.apiKey,
+        baseURL: endpoint || 'https://opencode.ai/zen/v1',
+      }) : null;
     } else if (this.isGroq) {
-      this.apiKey = this.groqKey;
-      this.model = process.env.MODEL || 'openai/gpt-oss-120b';
-      this.provider = 'Groq Cloud AI (GPT-OSS 120B)';
-      this.client = new OpenAI({
-        apiKey: this.groqKey,
-        baseURL: 'https://api.groq.com/openai/v1',
-      });
-    } else if (this.openaiKey) {
-      this.apiKey = this.openaiKey;
-      this.model = process.env.MODEL || (this.isGithubModels ? 'openai/gpt-4o-mini' : 'gpt-4o-mini');
-      this.provider = this.isAzure ? 'Azure OpenAI' : (this.isGithubModels ? 'GitHub Models' : 'OpenAI');
-
-      if (this.isAzure) {
-        this.client = new AzureOpenAI({
-          apiKey: this.openaiKey,
-          endpoint: process.env.OPENAI_API_ENDPOINT || '',
-          apiVersion: process.env.AZURE_API_VERSION || '',
-          deployment: process.env.AZURE_DEPLOYMENT || '',
-        });
-      } else {
-        this.client = new OpenAI({
-          apiKey: this.openaiKey,
-          baseURL: this.isGithubModels
-            ? 'https://models.github.ai/inference'
-            : (process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1'),
-        });
-      }
+      this.apiKey = groqEnvKey || envKey;
+      this.model = process.env.MODEL || 'llama-3.3-70b-versatile';
+      this.provider = 'Groq Cloud AI';
+      this.client = this.apiKey ? new OpenAI({
+        apiKey: this.apiKey,
+        baseURL: endpoint || 'https://api.groq.com/openai/v1',
+      }) : null;
+    } else if (chosenProvider === 'azure') {
+      this.apiKey = envKey || process.env.AZURE_OPENAI_API_KEY || '';
+      this.model = process.env.MODEL || process.env.AZURE_DEPLOYMENT || 'gpt-4o-mini';
+      this.provider = 'Azure OpenAI';
+      this.client = this.apiKey ? new AzureOpenAI({
+        apiKey: this.apiKey,
+        endpoint: endpoint || '',
+        apiVersion: process.env.AZURE_API_VERSION || '',
+        deployment: process.env.AZURE_DEPLOYMENT || '',
+      }) : null;
+    } else if (chosenProvider === 'github') {
+      this.apiKey = envKey || process.env.GITHUB_TOKEN || '';
+      this.model = process.env.MODEL || 'openai/gpt-4o-mini';
+      this.provider = 'GitHub Models';
+      this.client = this.apiKey ? new OpenAI({
+        apiKey: this.apiKey,
+        baseURL: endpoint || 'https://models.github.ai/inference',
+      }) : null;
+    } else if (chosenProvider === 'openai') {
+      this.apiKey = envKey;
+      this.model = process.env.MODEL || 'gpt-4o-mini';
+      this.provider = 'OpenAI';
+      this.client = this.apiKey ? new OpenAI({
+        apiKey: this.apiKey,
+        baseURL: endpoint || 'https://api.openai.com/v1',
+      }) : null;
     } else {
       this.apiKey = '';
-      this.model = 'gpt-4o-mini';
-      this.provider = 'OpenAI';
+      this.model = 'deepseek-v4-flash-free';
+      this.provider = 'OpenCode.ai';
       this.client = null;
     }
   }
@@ -159,7 +185,8 @@ export class ScannerService {
     if (provider === 'deepseek') return 'deepseek-chat';
     if (provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
     if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'llama-3.3-70b-versatile';
-    if (provider === 'opencode' || firstKey.startsWith('sk-')) return 'deepseek-v4-flash-free';
+    if (provider === 'opencode') return 'deepseek-v4-flash-free';
+    if (provider === 'openai') return 'gpt-4o-mini';
     return 'deepseek-v4-flash-free';
   }
 
@@ -174,7 +201,7 @@ export class ScannerService {
       });
     }
 
-    if (provider === 'opencode' || (key.startsWith('sk-') && !provider)) {
+    if (provider === 'opencode') {
       return new OpenAI({
         apiKey: key,
         baseURL: baseURL || 'https://opencode.ai/zen/v1',
@@ -230,7 +257,7 @@ export class ScannerService {
         ? 'DeepSeek AI'
         : provider === 'openrouter'
           ? 'OpenRouter AI'
-          : provider === 'opencode' || firstKey.startsWith('sk-')
+          : provider === 'opencode'
             ? 'OpenCode.ai'
             : provider === 'openai'
               ? 'OpenAI'

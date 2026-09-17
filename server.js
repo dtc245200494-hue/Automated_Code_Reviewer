@@ -123,7 +123,7 @@ app.get('/api/status', (req, res) => {
   const hasKey = scannerService.hasApiKey();
   res.json({
     status: 'online',
-    version: '1.0.0',
+    version: '2.0.0',
     ai_configured: hasKey,
     model: scannerService.model,
     provider: scannerService.provider
