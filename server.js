@@ -198,7 +198,7 @@ app.get(['/', '/index.html'], (req, res, next) => {
     const enhanced = html.includes(marker)
       ? html.replace(
           marker,
-          `${marker}\n  <script src="custom-provider.js"></script>\n  <script src="opencode-models.js"></script>`
+          `${marker}\n  <script src="custom-provider.js"></script>\n  <script src="opencode-models.js"></script>\n  <script src="project-scan-ui.js"></script>`
         )
       : html;
     res.type('html').send(enhanced);
