@@ -91,13 +91,23 @@ async function mapWithConcurrency(items, concurrency, worker) {
 export class ScannerService {
   constructor() {
     this.groqKey = process.env.GROQ_API_KEY || (process.env.OPENAI_API_KEY?.startsWith('gsk_') ? process.env.OPENAI_API_KEY : '');
-    this.openaiKey = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('gsk_') ? process.env.OPENAI_API_KEY : '';
+    this.opencodeKey = process.env.OPENAI_API_KEY?.startsWith('sk-') ? process.env.OPENAI_API_KEY : '';
+    this.openaiKey = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('gsk_') && !process.env.OPENAI_API_KEY.startsWith('sk-') ? process.env.OPENAI_API_KEY : '';
 
     this.isGroq = Boolean(this.groqKey);
+    this.isOpenCode = Boolean(this.opencodeKey);
     this.isAzure = Boolean(process.env.AZURE_API_VERSION && process.env.AZURE_DEPLOYMENT);
     this.isGithubModels = process.env.USE_GITHUB_MODELS === 'true';
 
-    if (this.isGroq) {
+    if (this.isOpenCode) {
+      this.apiKey = this.opencodeKey;
+      this.model = process.env.MODEL || 'deepseek-v4-flash-free';
+      this.provider = 'OpenCode.ai';
+      this.client = new OpenAI({
+        apiKey: this.opencodeKey,
+        baseURL: process.env.OPENAI_API_ENDPOINT || 'https://opencode.ai/zen/v1',
+      });
+    } else if (this.isGroq) {
       this.apiKey = this.groqKey;
       this.model = process.env.MODEL || 'openai/gpt-oss-120b';
       this.provider = 'Groq Cloud AI (GPT-OSS 120B)';
@@ -148,8 +158,9 @@ export class ScannerService {
     if (provider === 'gemini' || firstKey.startsWith('AIzaSy')) return 'gemini-1.5-flash';
     if (provider === 'deepseek') return 'deepseek-chat';
     if (provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
-    if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'openai/gpt-oss-120b';
-    return 'gpt-4o-mini';
+    if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'llama-3.3-70b-versatile';
+    if (provider === 'opencode' || firstKey.startsWith('sk-')) return 'deepseek-v4-flash-free';
+    return 'deepseek-v4-flash-free';
   }
 
   createClient(apiKey, provider, baseURL) {
@@ -160,6 +171,13 @@ export class ScannerService {
       return new OpenAI({
         apiKey: key,
         baseURL: baseURL || 'https://api.groq.com/openai/v1',
+      });
+    }
+
+    if (provider === 'opencode' || (key.startsWith('sk-') && !provider)) {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://opencode.ai/zen/v1',
       });
     }
 
@@ -212,9 +230,11 @@ export class ScannerService {
         ? 'DeepSeek AI'
         : provider === 'openrouter'
           ? 'OpenRouter AI'
-          : provider === 'openai' || firstKey.startsWith('sk-')
-            ? 'OpenAI'
-            : 'Groq Cloud AI';
+          : provider === 'opencode' || firstKey.startsWith('sk-')
+            ? 'OpenCode.ai'
+            : provider === 'openai'
+              ? 'OpenAI'
+              : 'Groq Cloud AI';
 
     return {
       success: true,

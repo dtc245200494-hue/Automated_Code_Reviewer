@@ -572,12 +572,24 @@ function setupEventListeners() {
 
 // Cập nhật gợi ý model và link đăng ký theo loại AI
 function updateProviderHints(prov) {
-  if (prov === 'groq') {
+  if (prov === 'opencode') {
+    apiKeyHelpLink.innerHTML = '<a href="https://opencode.ai" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key OpenCode.ai miễn phí</a>';
+    apiModelInput.placeholder = 'deepseek-v4-flash-free';
+    modelHintText.innerHTML = `
+      <div style="line-height:1.8;">
+        🆓 <strong>Free Models:</strong><br>
+        <code>deepseek-v4-flash-free</code> · <code>muse-spark-1.3-contributor-free</code> · <code>muse-spark-1.2-contributor-free</code><br>
+        <code>nemotron-3-ultra-free</code> · <code>nemotron-3.5-lightning-free</code> · <code>mimo-v2.5-free</code> · <code>ling-3.0-flash-fin-free</code>
+      </div>`;
+    if (!apiModelInput.value || ['openai/gpt-oss-120b','openai/gpt-oss-20b','gpt-4o-mini','gemini-1.5-flash','deepseek-chat'].includes(apiModelInput.value)) {
+      apiModelInput.value = 'deepseek-v4-flash-free';
+    }
+  } else if (prov === 'groq') {
     apiKeyHelpLink.innerHTML = '<a href="https://console.groq.com/keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API key Groq miễn phí</a>';
-    apiModelInput.placeholder = 'openai/gpt-oss-120b';
-    modelHintText.innerHTML = 'Gợi ý Groq: <code>openai/gpt-oss-120b</code>, <code>openai/gpt-oss-20b</code>';
-    if (!apiModelInput.value || apiModelInput.value === 'gpt-4o-mini' || apiModelInput.value === 'gemini-1.5-flash') {
-      apiModelInput.value = 'openai/gpt-oss-120b';
+    apiModelInput.placeholder = 'llama-3.3-70b-versatile';
+    modelHintText.innerHTML = 'Gợi ý Groq: <code>llama-3.3-70b-versatile</code>, <code>llama-3.1-8b-instant</code>, <code>mixtral-8x7b-32768</code>';
+    if (!apiModelInput.value || ['openai/gpt-oss-120b','openai/gpt-oss-20b'].includes(apiModelInput.value)) {
+      apiModelInput.value = 'llama-3.3-70b-versatile';
     }
   } else if (prov === 'gemini') {
     apiKeyHelpLink.innerHTML = '<a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy Gemini API Key miễn phí (Google AI Studio)</a>';
@@ -667,7 +679,7 @@ function loadApiKeyModalState() {
   apiKeyTestStatus.innerHTML = '';
   keyCardsContainer.innerHTML = '';
 
-  const prov = config?.provider || 'groq';
+  const prov = config?.provider || 'opencode';
   keyProviderSelect.value = prov;
   updateProviderHints(prov);
 
@@ -730,7 +742,7 @@ const DEFAULT_API_KEY = 'sk-PtTVvzUMtFeHt04GwX5DNH9la9Jv6j7Es6KjdadWkqTfRrA9Aho3
 function handleSaveApiKey() {
   const enteredKeys = getAllEnteredKeys();
   const provider = keyProviderSelect.value;
-  const model = apiModelInput.value.trim() || 'openai/gpt-oss-120b';
+  const model = apiModelInput.value.trim() || 'deepseek-v4-flash-free';
 
   // Nếu không nhập key thì dùng key mặc định
   const keys = enteredKeys.length > 0 ? enteredKeys : [DEFAULT_API_KEY];
