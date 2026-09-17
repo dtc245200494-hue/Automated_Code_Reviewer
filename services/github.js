@@ -9,182 +9,296 @@
 import https from 'https';
 
 const CODE_EXTENSIONS = new Set([
-  'js', 'jsx', 'ts', 'tsx', 'py', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'htm', 'json', 'yaml', 'yml', 'db', 'sqlite', 'sqlite3'
+  'js', 'jsx', 'ts', 'tsx', 'py', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp',
+  'rb', 'sh', 'html', 'htm', 'json', 'yaml', 'yml', 'db', 'sqlite', 'sqlite3'
 ]);
 
 const EXT_TO_LANG = {
-  'py': 'python',
-  'js': 'javascript',
-  'jsx': 'javascript',
-  'ts': 'typescript',
-  'tsx': 'typescript',
-  'php': 'php',
-  'java': 'java',
-  'go': 'go',
-  'cs': 'csharp',
-  'sql': 'sql',
-  'c': 'c',
-  'cpp': 'cpp',
-  'rb': 'ruby',
-  'sh': 'bash',
-  'html': 'html',
-  'htm': 'html',
-  'json': 'json',
-  'yaml': 'yaml',
-  'yml': 'yaml',
-  'db': 'sql',
-  'sqlite': 'sql',
-  'sqlite3': 'sql'
+  py: 'python',
+  js: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  php: 'php',
+  java: 'java',
+  go: 'go',
+  cs: 'csharp',
+  sql: 'sql',
+  c: 'c',
+  cpp: 'cpp',
+  rb: 'ruby',
+  sh: 'bash',
+  html: 'html',
+  htm: 'html',
+  json: 'json',
+  yaml: 'yaml',
+  yml: 'yaml',
+  db: 'sql',
+  sqlite: 'sql',
+  sqlite3: 'sql'
 };
 
-function httpsGetJson(url, headers = {}) {
+function httpsGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const options = {
       headers: {
         'User-Agent': 'AI-Security-Bot-Web-Scanner',
-        'Accept': 'application/vnd.github.v3+json',
+        Accept: 'application/vnd.github+json',
         ...headers
       }
     };
 
-    https.get(url, options, (res) => {
+    https.get(url, options, res => {
       let data = '';
-      res.on('data', chunk => data += chunk);
+      res.setEncoding('utf8');
+      res.on('data', chunk => {
+        data += chunk;
+      });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data));
-          } catch (e) {
-            reject(new Error('Lỗi phân tích JSON từ GitHub API'));
-          }
-        } else if (res.statusCode === 403) {
-          reject(new Error('GitHub API bị giới hạn tần suất (Rate limit) hoặc kho lưu trữ riêng tư (cần GitHub Token).'));
-        } else if (res.statusCode === 404) {
-          reject(new Error('Không tìm thấy GitHub Repository hoặc thư mục chỉ định. Vui lòng kiểm tra lại URL hoặc quyền truy cập.'));
-        } else {
-          reject(new Error(`GitHub API trả về mã lỗi HTTP ${res.statusCode}: ${data}`));
+          resolve({ statusCode: res.statusCode, data });
+          return;
         }
+
+        const err = new Error(
+          res.statusCode === 403
+            ? 'GitHub API bị giới hạn tần suất hoặc token không đủ quyền.'
+            : res.statusCode === 404
+              ? 'Không tìm thấy tài nguyên GitHub hoặc token không có quyền truy cập.'
+              : `GitHub API trả về HTTP ${res.statusCode}: ${data.slice(0, 500)}`
+        );
+        err.statusCode = res.statusCode;
+        err.responseBody = data;
+        reject(err);
       });
     }).on('error', reject);
   });
 }
 
-function httpsGetRaw(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'AI-Security-Bot-Web-Scanner' } }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(data);
-        } else {
-          reject(new Error(`Tải file thất bại (HTTP ${res.statusCode})`));
-        }
-      });
-    }).on('error', reject);
+async function httpsGetJson(url, headers = {}) {
+  const { data } = await httpsGet(url, headers);
+  try {
+    return JSON.parse(data);
+  } catch {
+    throw new Error('Lỗi phân tích JSON từ GitHub API.');
+  }
+}
+
+async function httpsGetRaw(url, headers = {}) {
+  const { data } = await httpsGet(url, {
+    Accept: 'application/vnd.github.raw',
+    ...headers
   });
+  return data;
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function runWorker() {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(concurrency, items.length)) },
+    () => runWorker()
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 export class GitHubService {
   /**
-   * Phân tích URL GitHub:
-   * Hỗ trợ:
-   * https://github.com/owner/repo
-   * https://github.com/owner/repo/tree/branch/subfolder/path
+   * Parse GitHub URLs without prematurely assuming that a branch cannot
+   * contain "/". The ambiguous /tree/<branch>/<folder> tail is resolved
+   * against the GitHub branches API inside fetchRepoFiles().
    */
   parseGitUrl(rawUrl, specifiedPath = '') {
-    let cleaned = rawUrl.trim().replace(/\.git$/, '');
-    // Bỏ trailing slash
-    cleaned = cleaned.replace(/\/$/, '');
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      throw new Error('Đường link GitHub không hợp lệ.');
+    }
 
-    const match = cleaned.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)(?:\/tree\/([^\/]+)(?:\/(.*))?)?/);
+    const cleaned = rawUrl.trim().replace(/\.git$/, '').replace(/\/$/, '');
+    const match = cleaned.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/(.+))?$/);
+
     if (!match) {
-      throw new Error('Đường link GitHub không hợp lệ. Ví dụ đúng: https://github.com/dtc245200494-hue/Automated_Code_Reviewer');
+      throw new Error(
+        'Đường link GitHub không hợp lệ. Ví dụ: https://github.com/owner/repo hoặc https://github.com/owner/repo/tree/branch/path'
+      );
     }
 
     const owner = match[1];
     const repo = match[2];
-    let branch = match[3] || '';
-    let folderPath = match[4] || '';
+    const treeTail = (match[3] || '').replace(/^\/+|\/+$/g, '');
+    const requestedFolder = (specifiedPath || '').trim().replace(/^\/+|\/+$/g, '');
 
-    if (specifiedPath && specifiedPath.trim()) {
-      folderPath = specifiedPath.trim().replace(/^\/+|\/+$/g, '');
+    return {
+      owner,
+      repo,
+      treeTail,
+      requestedFolder
+    };
+  }
+
+  async resolveBranchAndFolder(owner, repo, treeTail, requestedFolder, headers) {
+    if (!treeTail) {
+      const repoInfo = await httpsGetJson(`https://api.github.com/repos/${owner}/${repo}`, headers);
+      return {
+        branch: repoInfo.default_branch || 'main',
+        folderPath: requestedFolder
+      };
     }
 
-    return { owner, repo, branch, folderPath };
+    const parts = treeTail.split('/').filter(Boolean);
+
+    // Try the longest possible branch first. This correctly resolves branch
+    // names such as feature/login/fix before treating the remainder as folder.
+    for (let count = parts.length; count >= 1; count--) {
+      const candidate = parts.slice(0, count).join('/');
+      try {
+        await httpsGetJson(
+          `https://api.github.com/repos/${owner}/${repo}/branches/${encodeURIComponent(candidate)}`,
+          headers
+        );
+
+        const urlFolder = parts.slice(count).join('/');
+        return {
+          branch: candidate,
+          folderPath: requestedFolder || urlFolder
+        };
+      } catch (err) {
+        if (err.statusCode !== 404) throw err;
+      }
+    }
+
+    throw new Error(`Không tìm thấy branch phù hợp với URL: ${treeTail}`);
   }
 
   async fetchRepoFiles(rawUrl, targetFolder = '', token = '') {
-    const { owner, repo, branch: parsedBranch, folderPath: parsedFolder } = this.parseGitUrl(rawUrl, targetFolder);
+    const {
+      owner,
+      repo,
+      treeTail,
+      requestedFolder
+    } = this.parseGitUrl(rawUrl, targetFolder);
 
-    const headers = {};
-    const authToken = token || process.env.GITHUB_TOKEN;
-    if (authToken) {
-      headers['Authorization'] = `token ${authToken}`;
-    }
+    const authToken = token || process.env.GITHUB_TOKEN || '';
+    const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
 
-    // 1. Lấy thông tin default branch nếu chưa có branch
-    let branch = parsedBranch;
-    if (!branch) {
-      const repoInfo = await httpsGetJson(`https://api.github.com/repos/${owner}/${repo}`, headers);
-      branch = repoInfo.default_branch || 'main';
-    }
+    const { branch, folderPath } = await this.resolveBranchAndFolder(
+      owner,
+      repo,
+      treeTail,
+      requestedFolder,
+      headers
+    );
 
-    // 2. Lấy toàn bộ Git Tree (recursive = 1)
-    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
     const treeData = await httpsGetJson(treeUrl, headers);
 
-    if (!treeData.tree || !Array.isArray(treeData.tree)) {
-      throw new Error('Không thể đọc cấu trúc cây thư mục từ Git Tree.');
+    if (!Array.isArray(treeData.tree)) {
+      throw new Error('Không thể đọc cấu trúc cây thư mục từ GitHub.');
     }
 
-    const folderPrefix = parsedFolder ? `${parsedFolder.replace(/^\/+|\/+$/g, '')}/` : '';
+    if (treeData.truncated) {
+      throw new Error('GitHub trả về tree bị truncated; không thể đảm bảo đã quét đầy đủ repository.');
+    }
 
-    // 3. Lọc các file phù hợp nằm trong thư mục chỉ định và thuộc định dạng code
+    const normalizedFolder = folderPath ? folderPath.replace(/^\/+|\/+$/g, '') : '';
+    const folderPrefix = normalizedFolder ? `${normalizedFolder}/` : '';
+
     const matchingFiles = treeData.tree.filter(item => {
       if (item.type !== 'blob') return false;
-      if (folderPrefix && !item.path.startsWith(folderPrefix) && item.path !== parsedFolder) return false;
-      
-      // Bỏ qua node_modules, git, dist...
-      if (item.path.includes('node_modules/') || item.path.includes('.git/') || item.path.includes('dist/')) return false;
+      if (folderPrefix && !item.path.startsWith(folderPrefix) && item.path !== normalizedFolder) {
+        return false;
+      }
 
-      const ext = item.path.split('.').pop().toLowerCase();
+      if (
+        item.path.includes('node_modules/')
+        || item.path.includes('.git/')
+        || item.path.includes('dist/')
+        || item.path.includes('build/')
+      ) {
+        return false;
+      }
+
+      const ext = item.path.split('.').pop()?.toLowerCase() || '';
       return CODE_EXTENSIONS.has(ext);
     });
 
     if (matchingFiles.length === 0) {
-      throw new Error(`Không tìm thấy file mã nguồn nào phù hợp ${folderPrefix ? `trong thư mục "${folderPrefix}"` : 'trong kho lưu trữ'}.`);
+      throw new Error(
+        `Không tìm thấy file mã nguồn phù hợp ${folderPrefix ? `trong thư mục "${folderPrefix}"` : 'trong repository'}.`
+      );
     }
 
-    // Giới hạn an toàn tối đa 40 file để tránh quá tải
-    const filesToFetch = matchingFiles.slice(0, 40);
+    const envConcurrency = Number.parseInt(process.env.GITHUB_FETCH_CONCURRENCY || '', 10);
+    const concurrency = Number.isFinite(envConcurrency) && envConcurrency > 0
+      ? envConcurrency
+      : 5;
 
-    // 4. Tải nội dung từng file
-    const loadedFiles = [];
-    for (const item of filesToFetch) {
-      try {
-        const rawContentUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
-        const content = await httpsGetRaw(rawContentUrl);
-        const ext = item.path.split('.').pop().toLowerCase();
+    const fetchResults = await mapWithConcurrency(
+      matchingFiles,
+      concurrency,
+      async item => {
+        try {
+          // Contents API keeps Authorization attached for private repositories.
+          // Raw GitHub URLs often fail for private repos when auth headers are lost.
+          const contentUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${item.path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`;
+          const content = await httpsGetRaw(contentUrl, headers);
+          const ext = item.path.split('.').pop()?.toLowerCase() || '';
 
-        loadedFiles.push({
-          name: item.path.split('/').pop(),
-          path: item.path,
-          content: content,
-          language: EXT_TO_LANG[ext] || 'auto',
-          size: item.size,
-          result: null
-        });
-      } catch (err) {
-        console.warn(`Không thể tải file ${item.path}:`, err.message);
+          return {
+            ok: true,
+            file: {
+              name: item.path.split('/').pop(),
+              path: item.path,
+              content,
+              language: EXT_TO_LANG[ext] || 'auto',
+              size: item.size,
+              result: null
+            }
+          };
+        } catch (err) {
+          console.warn(`Không thể tải file ${item.path}:`, err.message);
+          return {
+            ok: false,
+            path: item.path,
+            error: err.message
+          };
+        }
       }
+    );
+
+    const loadedFiles = fetchResults
+      .filter(result => result.ok)
+      .map(result => result.file);
+
+    const failedFiles = fetchResults
+      .filter(result => !result.ok)
+      .map(result => ({
+        path: result.path,
+        error: result.error
+      }));
+
+    if (loadedFiles.length === 0) {
+      throw new Error('Không tải được nội dung của bất kỳ file mã nguồn nào.');
     }
 
     return {
       repo: `${owner}/${repo}`,
       branch,
-      folder: parsedFolder || '/',
+      folder: normalizedFolder || '/',
       total_found: matchingFiles.length,
+      loaded_count: loadedFiles.length,
+      failed_count: failedFiles.length,
+      complete: failedFiles.length === 0,
+      failed_files: failedFiles,
       files: loadedFiles
     };
   }

@@ -16,8 +16,20 @@ jobs:
       - name: Checkout repository code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run scanner regression tests
+        run: npm test
+
       - name: Run AI Security Review
-        uses: ./
+        uses: ./legacy-bot-action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
