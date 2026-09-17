@@ -1,24 +1,12 @@
 const OPENCODE_MODEL_LIST_URL = 'https://opencode.ai/zen/v1/models';
+const OPENCODE_ZEN_BASE = 'https://opencode.ai/zen/v1';
 
 const OPENCODE_ENDPOINTS = {
-  'openai-chat': 'https://opencode.ai/inference/openai/v1',
-  'openai-responses': 'https://opencode.ai/inference/openai/v1',
-  'anthropic-messages': 'https://opencode.ai/inference/anthropic/v1',
-  'gemini-generate-content': 'https://opencode.ai/inference/google'
+  'openai-chat': OPENCODE_ZEN_BASE,
+  'openai-responses': OPENCODE_ZEN_BASE,
+  'anthropic-messages': OPENCODE_ZEN_BASE,
+  'gemini-generate-content': `${OPENCODE_ZEN_BASE}/models/{model}:generateContent`
 };
-
-const VERIFIED_EXTERNAL_FREE = new Set([
-  'mimo-v2.5-free',
-  'nemotron-3-super-free'
-]);
-
-const EXTRA_INFERENCE_MODELS = [
-  'nemotron-3-super-free'
-];
-
-function isKnownRestrictedFree(id) {
-  return id.endsWith('-free') && !VERIFIED_EXTERNAL_FREE.has(id);
-}
 
 export function classifyOpenCodeModel(modelId) {
   const id = String(modelId || '').trim();
@@ -34,25 +22,20 @@ export function classifyOpenCodeModel(modelId) {
 
   let protocol = 'openai-chat';
 
-  if (/^gpt-/i.test(id) || /^grok-4(?:\.|-)/i.test(id)) {
+  if (/^gpt-/i.test(id) || /^grok-/i.test(id)) {
     protocol = 'openai-responses';
   } else if (/^claude-/i.test(id) || /^qwen3(?:\.|-)/i.test(id)) {
     protocol = 'anthropic-messages';
   } else if (/^gemini-/i.test(id)) {
     protocol = 'gemini-generate-content';
-  } else if (/^grok-build-/i.test(id)) {
-    protocol = 'openai-chat';
   }
 
-  const externalAvailable = !isKnownRestrictedFree(id);
   return {
     id,
     protocol,
     baseURL: OPENCODE_ENDPOINTS[protocol],
-    externalAvailable,
-    reason: externalAvailable
-      ? ''
-      : 'Model free này hiện không được xác nhận dùng được từ API bên ngoài OpenCode.'
+    externalAvailable: true,
+    reason: ''
   };
 }
 
@@ -86,7 +69,6 @@ export async function fetchOpenCodeModels(fetchImpl = globalThis.fetch) {
       ? payload.data.map(item => String(item?.id || '').trim()).filter(Boolean)
       : []
   );
-  EXTRA_INFERENCE_MODELS.forEach(id => ids.add(id));
 
   return [...ids]
     .sort((a, b) => a.localeCompare(b))
