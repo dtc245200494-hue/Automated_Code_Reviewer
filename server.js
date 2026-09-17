@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { SAMPLES } from './data/samples.js';
-import { ScannerService } from './services/scanner.js';
+import { ScannerService, DEFAULT_OPENCODE_API_KEY } from './services/scanner.js';
 import { GitHubService } from './services/github.js';
 import {
   UniversalAIClient,
@@ -39,6 +39,18 @@ const scannerService = new ScannerService();
 const githubService = new GitHubService();
 const publicDir = path.join(__dirname, 'public');
 let openCodeModelsCache = { expiresAt: 0, models: [] };
+
+// Khi người dùng chưa thêm API key riêng, server sẽ dùng key OpenCode trong .env
+// và tự phân phối/fallback giữa đúng 6 model free này.
+const DEFAULT_OPENCODE_FREE_MODELS = Object.freeze([
+  'ling-3.0-flash-fin-free',
+  'muse-spark-1.2-contributor-free',
+  'muse-spark-1.3-contributor-free',
+  'nemotron-3.5-lightning-free',
+  'nemotron-3-ultra-free',
+  'mimo-v2.5-free'
+]);
+let defaultModelCursor = 0;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -88,6 +100,78 @@ function getCustomKeys(apiKey, authType) {
   throw new Error('API Key không được để trống với kiểu xác thực hiện tại.');
 }
 
+function getRotatedDefaultModels() {
+  const start = defaultModelCursor % DEFAULT_OPENCODE_FREE_MODELS.length;
+  defaultModelCursor = (defaultModelCursor + 1) % DEFAULT_OPENCODE_FREE_MODELS.length;
+  return DEFAULT_OPENCODE_FREE_MODELS.map((_, index) =>
+    DEFAULT_OPENCODE_FREE_MODELS[(start + index) % DEFAULT_OPENCODE_FREE_MODELS.length]
+  );
+}
+
+function getScanFailureReason(result) {
+  if (result?.ai_error) return result.ai_error;
+  const firstFailedChunk = Array.isArray(result?.failed_chunks) ? result.failed_chunks[0] : null;
+  if (firstFailedChunk?.error) return firstFailedChunk.error;
+  return result?.overall_summary || 'Model không hoàn tất lượt quét.';
+}
+
+function isLegacyBrowserDefaultKey(apiKey) {
+  const keys = scannerService.parseApiKeys(apiKey || '');
+  return keys.length === 1 && keys[0] === DEFAULT_OPENCODE_API_KEY;
+}
+
+async function scanWithDefaultOpenCodePool(code, language) {
+  // Nếu server chưa có key OpenCode thực sự thì giữ nguyên Heuristic Mode.
+  if (!scannerService.hasApiKey() || scannerService.provider !== 'OpenCode.ai') {
+    return scannerService.scanCode(code, language, null);
+  }
+
+  const configuredEndpoint = (process.env.OPENAI_API_ENDPOINT || '').trim();
+  const baseURL = configuredEndpoint.includes('opencode.ai')
+    ? configuredEndpoint
+    : 'https://opencode.ai/zen/v1';
+  const models = getRotatedDefaultModels();
+  const attempts = [];
+  let lastResult = null;
+
+  for (const modelName of models) {
+    const result = await scannerService.scanCode(code, language, {
+      apiKey: scannerService.apiKey,
+      provider: 'opencode',
+      model: modelName,
+      baseURL
+    });
+
+    lastResult = result;
+    if (!result?.incomplete) {
+      return {
+        ...result,
+        model_used: modelName,
+        default_model_pool: true,
+        model_attempts: [...attempts, { model: modelName, success: true }]
+      };
+    }
+
+    const reason = getScanFailureReason(result);
+    attempts.push({ model: modelName, success: false, error: reason });
+    console.warn(`Model mặc định ${modelName} quét chưa hoàn tất, chuyển model tiếp theo:`, reason);
+  }
+
+  if (!lastResult) {
+    return scannerService.scanCode(code, language, null);
+  }
+
+  return {
+    ...lastResult,
+    is_safe: false,
+    incomplete: true,
+    scan_status: 'incomplete',
+    default_model_pool: true,
+    model_attempts: attempts,
+    overall_summary: `Cả ${DEFAULT_OPENCODE_FREE_MODELS.length} model OpenCode miễn phí đều không hoàn tất lượt quét. Không thể kết luận mã nguồn an toàn. ${lastResult.overall_summary || ''}`.trim()
+  };
+}
+
 // ScannerService giữ nguyên interface OpenAI-compatible. Với provider custom,
 // UniversalAIClient dịch giao thức khác về cùng shape choices[0].message.content.
 const createBuiltInClient = scannerService.createClient.bind(scannerService);
@@ -121,11 +205,13 @@ app.use(express.static(publicDir));
 // API: Trạng thái & cấu hình hệ thống
 app.get('/api/status', (req, res) => {
   const hasKey = scannerService.hasApiKey();
+  const usingDefaultPool = hasKey && scannerService.provider === 'OpenCode.ai';
   res.json({
     status: 'online',
     version: '2.0.0',
     ai_configured: hasKey,
-    model: scannerService.model,
+    model: usingDefaultPool ? 'auto-free-pool' : scannerService.model,
+    models: usingDefaultPool ? DEFAULT_OPENCODE_FREE_MODELS : [scannerService.model],
     provider: scannerService.provider
   });
 });
@@ -265,11 +351,20 @@ app.post('/api/scan', async (req, res) => {
         model: targetModel,
         baseURL: packUniversalConfig(universalConfig)
       };
-    } else if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+    } else if (
+      apiKey &&
+      typeof apiKey === 'string' &&
+      apiKey.trim() &&
+      !isLegacyBrowserDefaultKey(apiKey)
+    ) {
+      // Chỉ khi người dùng thực sự nhập key riêng mới cho phép override provider/model.
       customConfig = { apiKey, provider, model, baseURL };
     }
 
-    const result = await scannerService.scanCode(code, language || 'auto', customConfig);
+    const result = customConfig
+      ? await scannerService.scanCode(code, language || 'auto', customConfig)
+      : await scanWithDefaultOpenCodePool(code, language || 'auto');
+
     return res.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -288,6 +383,6 @@ app.listen(PORT, () => {
   console.log('====================================================');
   console.log('🛡️  AI SECURITY BOT - WEB APPLICATION ĐÃ KHỞI CHẠY');
   console.log(`🌐  Truy cập giao diện: http://localhost:${PORT}`);
-  console.log(`🔑  Trạng thái AI Key: ${scannerService.hasApiKey() ? `ĐÃ KẾT NỐI (${scannerService.provider} - ${scannerService.model})` : 'CHƯA CẤU HÌNH (dùng Heuristic Mode)'}`);
+  console.log(`🔑  Trạng thái AI Key: ${scannerService.hasApiKey() ? `ĐÃ KẾT NỐI (${scannerService.provider} - ${scannerService.provider === 'OpenCode.ai' ? `${DEFAULT_OPENCODE_FREE_MODELS.length} model free tự động` : scannerService.model})` : 'CHƯA CẤU HÌNH (dùng Heuristic Mode)'}`);
   console.log('====================================================');
 });
