@@ -102,15 +102,15 @@ test('11. overlapping chunks deduplicate the same finding', async () => {
   const service = scanner();
   service.createClient = () => ({ fake: true });
   service.requestAi = async (_client, _model, prompt) => {
-    const hasLine230 = prompt.includes('[L230]');
+    const hasLine580 = prompt.includes('[L580]');
     return {
-      is_safe: !hasLine230,
+      is_safe: !hasLine580,
       overall_summary: '',
-      vulnerabilities: hasLine230 ? [{
+      vulnerabilities: hasLine580 ? [{
         type: 'SQL Injection',
         severity: 'Cao',
-        owasp_category: 'A03:2021-Injection',
-        line_number: 230,
+        owasp_category: 'A03:2025 - Injection',
+        line_number: 580,
         affected_lines: 'dangerousQuery(userInput)',
         explanation: 'test',
         attack_scenario: 'test',
@@ -121,7 +121,7 @@ test('11. overlapping chunks deduplicate the same finding', async () => {
     };
   };
 
-  const code = Array.from({ length: 460 }, (_, i) => `line ${i + 1}`).join('\n');
+  const code = Array.from({ length: 900 }, (_, i) => `line ${i + 1}`).join('\n');
   const result = await service.scanCode(code, 'javascript', {
     apiKey: 'key_one_12345',
     provider: 'openai'
@@ -129,7 +129,7 @@ test('11. overlapping chunks deduplicate the same finding', async () => {
 
   assert.equal(result.incomplete, false);
   assert.equal(result.vulnerabilities.length, 1);
-  assert.equal(result.vulnerabilities[0].line_number, 230);
+  assert.equal(result.vulnerabilities[0].line_number, 580);
 });
 
 test('12. slash-containing GitHub branch tail is preserved for resolution', () => {
@@ -251,3 +251,51 @@ test('17. mockAnalysis provides line range, CWE, and OWASP Top 10:2025', () => {
   assert.equal(sqli.start_line, 1);
   assert.equal(sqli.end_line, 1);
 });
+
+test('18. circuit breaker aborts subsequent chunks immediately on 429/quota error', async () => {
+  const service = scanner();
+  service.createClient = () => ({ fake: true });
+  let callCount = 0;
+  service.requestAi = async () => {
+    callCount++;
+    throw new Error('429 Too Many Requests: quota exceeded');
+  };
+
+  const code = Array.from({ length: 1500 }, (_, i) => `line ${i + 1}`).join('\n');
+  const result = await service.scanCode(code, 'javascript', {
+    apiKey: 'key_test',
+    provider: 'openai'
+  });
+
+  assert.equal(result.is_safe, false);
+  assert.equal(result.incomplete, true);
+  // Circuit breaker must stop requests early (not invoke all chunks)
+  assert.ok(callCount < 3);
+});
+
+test('19. large files (>3000 lines) use targeted pre-filtered chunks', async () => {
+  const service = scanner();
+  service.createClient = () => ({ fake: true });
+  service.requestAi = async () => {
+    return {
+      is_safe: true,
+      overall_summary: 'OK',
+      vulnerabilities: [],
+      recommendations: []
+    };
+  };
+
+  const lines = Array.from({ length: 3500 }, (_, i) => `const x_${i} = ${i};`);
+  lines[1199] = 'const query = "SELECT * FROM users WHERE id = " + userId;';
+  const code = lines.join('\n');
+
+  const result = await service.scanCode(code, 'javascript', {
+    apiKey: 'key_test',
+    provider: 'openai'
+  });
+
+  assert.equal(result.is_targeted, true);
+  // Targeted scanning only reviews suspect regions instead of ~7 full chunks
+  assert.ok(result.chunk_count <= 2);
+});
+

@@ -8,10 +8,135 @@
  */
 import { OpenAI, AzureOpenAI } from 'openai';
 
-const CHUNK_SIZE = 250;
-const CHUNK_OVERLAP = 40;
+export const SINGLE_REQUEST_MAX_LINES = Number.parseInt(process.env.SCAN_SINGLE_LIMIT || '500', 10);
+export const CHUNK_SIZE = Number.parseInt(process.env.SCAN_CHUNK_SIZE || '600', 10);
+export const CHUNK_OVERLAP = 50;
+export const LARGE_FILE_THRESHOLD = Number.parseInt(process.env.SCAN_LARGE_THRESHOLD || '3000', 10);
+export const TARGETED_WINDOW_PADDING = 40;
 const DEFAULT_MAX_CONCURRENCY = 4;
 const DEFAULT_RETRIES = 2;
+
+export function isFatalAiError(err) {
+  if (!err) return false;
+  const status = Number(err.status || err.statusCode || err.response?.status || 0);
+  if (status === 401 || status === 403 || status === 429) return true;
+  const msg = String(err.message || '').toLowerCase();
+  return (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('401') ||
+    msg.includes('unauthorized') ||
+    msg.includes('invalid api key') ||
+    msg.includes('invalid_api_key') ||
+    msg.includes('403') ||
+    msg.includes('forbidden') ||
+    msg.includes('permission_denied') ||
+    msg.includes('tier')
+  );
+}
+
+export function findSuspectLines(code) {
+  if (!code || typeof code !== 'string') return [];
+  const lines = code.split('\n');
+  const suspectIndices = new Set();
+
+  const patterns = [
+    // SQL Injection
+    /\b(select|insert|update|delete|drop|union|alter)\b.*(\+|\$\{)/i,
+    /(\+|\$\{).*\b(select|from|where|into)\b/i,
+    // DOM XSS
+    /(innerHTML|outerHTML|insertAdjacentHTML|document\.write)\s*=/i,
+    /dangerouslySetInnerHTML/i,
+    // Command Injection
+    /\b(exec|execSync|spawn|spawnSync|fork|popen|system)\s*\(/i,
+    // Eval / Code Execution
+    /\b(eval|Function)\s*\(/i,
+    // Path Traversal
+    /(send_file|sendFile|readFile|createReadStream|openSync)\s*\(.*(req\.|params|query|filename|input)/i,
+    /(path\.join|os\.path\.join)\s*\(.*(req\.|params|query|input)/i,
+    // Hardcoded Secrets
+    /\b(api[_-]?key|secret(?:[_-]?key)?|password|passwd|token|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i,
+    // SSRF
+    /\b(fetch|axios|request|http\.get|https\.get)\s*\(.*(req\.|params|query|url|target)/i,
+    // Weak Crypto / Insecure Auth
+    /\b(createCipher|md5|sha1|des)\b/i,
+    /jwt\.decode\s*\(/i
+  ];
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*')) return;
+    if (/(mock|example|placeholder|dummy|changeme)/i.test(trimmed)) return;
+
+    for (const pat of patterns) {
+      if (pat.test(trimmed)) {
+        suspectIndices.add(idx + 1); // 1-indexed
+        break;
+      }
+    }
+  });
+
+  return Array.from(suspectIndices).sort((a, b) => a - b);
+}
+
+export function buildTargetedChunks(allLines, suspectLines, windowPadding = TARGETED_WINDOW_PADDING, maxChunkSize = CHUNK_SIZE) {
+  if (!suspectLines || suspectLines.length === 0) {
+    const end = Math.min(allLines.length, maxChunkSize);
+    return [{
+      chunkLines: allLines.slice(0, end),
+      startLineNumber: 1,
+      endLineNumber: end
+    }];
+  }
+
+  const totalLines = allLines.length;
+  const windows = suspectLines.map(line => ({
+    start: Math.max(1, line - windowPadding),
+    end: Math.min(totalLines, line + windowPadding)
+  }));
+
+  const merged = [];
+  let current = windows[0];
+
+  for (let i = 1; i < windows.length; i++) {
+    const next = windows[i];
+    if (next.start <= current.end + 5) {
+      current.end = Math.max(current.end, next.end);
+    } else {
+      merged.push(current);
+      current = next;
+    }
+  }
+  merged.push(current);
+
+  const chunks = [];
+  for (const win of merged) {
+    const span = win.end - win.start + 1;
+    if (span <= maxChunkSize) {
+      chunks.push({
+        chunkLines: allLines.slice(win.start - 1, win.end),
+        startLineNumber: win.start,
+        endLineNumber: win.end
+      });
+    } else {
+      const step = maxChunkSize - CHUNK_OVERLAP;
+      for (let s = win.start; s <= win.end; s += step) {
+        const e = Math.min(s + maxChunkSize - 1, win.end);
+        chunks.push({
+          chunkLines: allLines.slice(s - 1, e),
+          startLineNumber: s,
+          endLineNumber: e
+        });
+        if (e >= win.end) break;
+      }
+    }
+  }
+
+  return chunks;
+}
+
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -85,14 +210,16 @@ function dedupeVulnerabilities(vulns) {
   return out;
 }
 
-async function mapWithConcurrency(items, concurrency, worker) {
+async function mapWithConcurrency(items, concurrency, worker, shouldAbort = () => false) {
   const results = new Array(items.length);
   let cursor = 0;
 
   async function runWorker() {
     while (true) {
+      if (shouldAbort()) return;
       const index = cursor++;
       if (index >= items.length) return;
+      if (shouldAbort()) return;
       results[index] = await worker(items[index], index);
     }
   }
@@ -439,6 +566,9 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
         return this.validateAiResult(JSON.parse(raw));
       } catch (err) {
         lastError = err;
+        if (isFatalAiError(err)) {
+          throw err;
+        }
         if (attempt < retries) {
           await sleep(300 * (2 ** attempt));
         }
@@ -497,7 +627,8 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
 
     const allLines = code.split('\n');
 
-    if (allLines.length <= CHUNK_SIZE) {
+    // Tier 1: File nhỏ (<= 500 dòng) -> 1 request duy nhất
+    if (allLines.length <= SINGLE_REQUEST_MAX_LINES) {
       const prompt = this.generateSecurityPrompt(code, language);
       try {
         const parsed = await this.requestAi(clientPool[0], activeModel, prompt);
@@ -514,16 +645,29 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       }
     }
 
-    const chunks = [];
-    const step = CHUNK_SIZE - CHUNK_OVERLAP;
-    for (let start = 0; start < allLines.length; start += step) {
-      const chunkLines = allLines.slice(start, Math.min(start + CHUNK_SIZE, allLines.length));
-      chunks.push({
-        chunkLines,
-        startLineNumber: start + 1,
-        endLineNumber: start + chunkLines.length
-      });
-      if (start + CHUNK_SIZE >= allLines.length) break;
+    // Tier 2 & Tier 3:
+    // File > 3000 dòng: Heuristic pre-filter để lấy các phân đoạn mục tiêu
+    // File 500 - 3000 dòng: Chunk 600 dòng, overlap 50 dòng
+    let chunks = [];
+    let isTargetedScan = false;
+    let suspectLineCount = 0;
+
+    if (allLines.length > LARGE_FILE_THRESHOLD) {
+      const suspectLines = findSuspectLines(code);
+      suspectLineCount = suspectLines.length;
+      chunks = buildTargetedChunks(allLines, suspectLines, TARGETED_WINDOW_PADDING, CHUNK_SIZE);
+      isTargetedScan = true;
+    } else {
+      const step = CHUNK_SIZE - CHUNK_OVERLAP;
+      for (let start = 0; start < allLines.length; start += step) {
+        const chunkLines = allLines.slice(start, Math.min(start + CHUNK_SIZE, allLines.length));
+        chunks.push({
+          chunkLines,
+          startLineNumber: start + 1,
+          endLineNumber: start + chunkLines.length
+        });
+        if (start + CHUNK_SIZE >= allLines.length) break;
+      }
     }
 
     const envConcurrency = Number.parseInt(process.env.SCAN_MAX_CONCURRENCY || '', 10);
@@ -531,10 +675,26 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       ? envConcurrency
       : Math.min(DEFAULT_MAX_CONCURRENCY, Math.max(1, clientPool.length * 2));
 
+    let circuitBroken = false;
+    let fatalErrorReason = '';
+
     const chunkResults = await mapWithConcurrency(
       chunks,
       configuredConcurrency,
       async (chunk, chunkIndex) => {
+        if (circuitBroken) {
+          return {
+            ok: false,
+            aborted: true,
+            error: `Đã hủy do lỗi hệ thống/hạn ngạch (${fatalErrorReason})`,
+            startLineNumber: chunk.startLineNumber,
+            endLineNumber: chunk.endLineNumber,
+            vulnerabilities: [],
+            recommendations: [],
+            overall_summary: ''
+          };
+        }
+
         const assignedClient = clientPool[chunkIndex % clientPool.length];
         const prompt = this.generateChunkSecurityPrompt(chunk.chunkLines, chunk.startLineNumber, language);
 
@@ -548,6 +708,10 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
           };
         } catch (err) {
           console.warn(`Lỗi khi quét đoạn L${chunk.startLineNumber}-L${chunk.endLineNumber}:`, err.message);
+          if (isFatalAiError(err)) {
+            circuitBroken = true;
+            fatalErrorReason = err.message;
+          }
           return {
             ok: false,
             error: err.message,
@@ -558,27 +722,43 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
             overall_summary: ''
           };
         }
-      }
+      },
+      () => circuitBroken
     );
 
-    const failedChunks = chunkResults.filter(result => !result.ok);
+    const processedResults = chunkResults.filter(Boolean);
+    const failedChunks = processedResults.filter(result => !result.ok);
     const aggregatedVulns = dedupeVulnerabilities(
-      chunkResults.flatMap(result => result.vulnerabilities || [])
+      processedResults.flatMap(result => result.vulnerabilities || [])
     );
     const uniqueRecs = normalizeRecommendations(
-      chunkResults.flatMap(result => result.recommendations || [])
+      processedResults.flatMap(result => result.recommendations || [])
     );
-    const summaries = chunkResults
+    const summaries = processedResults
       .filter(result => result.ok && result.overall_summary)
       .map(result => `L${result.startLineNumber}-L${result.endLineNumber}: ${result.overall_summary}`);
 
-    const incomplete = failedChunks.length > 0;
+    const incomplete = failedChunks.length > 0 || circuitBroken;
+
+    // Nếu tất cả phân đoạn đều lỗi do circuit broken (ví dụ 429 quota/key sai), trả về incomplete fallback có chạy qua Heuristic
+    if (circuitBroken && processedResults.filter(r => r.ok).length === 0) {
+      return this.buildIncompleteFallback(code, language, `Lỗi hạn ngạch hoặc hệ thống AI: ${fatalErrorReason}`);
+    }
+
     const isSafe = !incomplete && aggregatedVulns.length === 0;
 
     let overallSummary;
-    if (incomplete) {
+    if (circuitBroken) {
+      overallSummary = `Quét AI bị gián đoạn do lỗi hệ thống/hạn ngạch (${fatalErrorReason}). `
+        + `Đã dừng sớm các phân đoạn còn lại để tránh lãng phí hạn ngạch API. `
+        + `Không thể kết luận mã nguồn an toàn. Đã giữ lại ${aggregatedVulns.length} phát hiện từ các phân đoạn hoàn thành trước đó.`;
+    } else if (incomplete) {
       overallSummary = `Quét chưa hoàn tất: ${failedChunks.length}/${chunks.length} phân đoạn lỗi sau khi retry. `
         + `Không thể kết luận mã nguồn an toàn. Đã giữ lại ${aggregatedVulns.length} phát hiện từ các phân đoạn thành công.`;
+    } else if (isTargetedScan) {
+      overallSummary = aggregatedVulns.length === 0
+        ? `Đã rà soát file lớn (${allLines.length} dòng) qua ${chunks.length} phân đoạn mục tiêu (heuristic khoanh vùng ${suspectLineCount} vị trí rủi ro). Không phát hiện lỗ hổng nghiêm trọng.`
+        : `Đã rà soát file lớn (${allLines.length} dòng) qua ${chunks.length} phân đoạn mục tiêu. Phát hiện ${aggregatedVulns.length} nguy cơ tiềm ẩn.\n${summaries.join('\n')}`;
     } else if (aggregatedVulns.length === 0) {
       overallSummary = `Đã quét đầy đủ ${allLines.length} dòng code qua ${chunks.length} phân đoạn (overlap ${CHUNK_OVERLAP} dòng). Không phát hiện lỗ hổng nghiêm trọng.`;
     } else {
@@ -599,7 +779,8 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       })),
       chunk_count: chunks.length,
       overlap_lines: CHUNK_OVERLAP,
-      source: 'ai_live_chunked_parallel',
+      is_targeted: isTargetedScan,
+      source: isTargetedScan ? 'ai_live_targeted_chunks' : 'ai_live_chunked_parallel',
       model_used: activeModel
     };
   }
