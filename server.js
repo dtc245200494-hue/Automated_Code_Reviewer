@@ -12,6 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import { OpenAI } from 'openai';
 import { SAMPLES } from './data/samples.js';
 import { ScannerService } from './services/scanner.js';
 import { GitHubService } from './services/github.js';
@@ -64,6 +65,21 @@ function normalizeCustomEndpoint(value) {
 
   return parsed.toString().replace(/\/+$/, '');
 }
+
+// Với provider Custom, endpoint người dùng nhập phải được ưu tiên tuyệt đối,
+// không tự suy đoán provider theo prefix của API key (gsk_, sk-, ...).
+const createBuiltInClient = scannerService.createClient.bind(scannerService);
+scannerService.createClient = (apiKey, provider, baseURL) => {
+  if (provider === 'custom') {
+    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+    if (!key) return null;
+    return new OpenAI({
+      apiKey: key,
+      baseURL: normalizeCustomEndpoint(baseURL)
+    });
+  }
+  return createBuiltInClient(apiKey, provider, baseURL);
+};
 
 // Chèn phần mở rộng Custom API vào giao diện mà không sửa app.js cũ.
 app.get(['/', '/index.html'], (req, res, next) => {
