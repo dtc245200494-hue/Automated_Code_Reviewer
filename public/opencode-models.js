@@ -48,6 +48,7 @@
 
   let modelsCache = [];
   let loading = false;
+  const runtimeUnavailable = new Set();
 
   function readStoredConfig() {
     try {
@@ -92,6 +93,11 @@
     const item = modelsCache.find(model => model.id === modelId);
     if (!item) return;
 
+    if (runtimeUnavailable.has(item.id)) {
+      setStatus(`⛔ ${item.id} vừa bị OpenCode báo "Model is unavailable". Hãy chọn model khác hoặc bấm Tải lại model để thử lại.`, 'warn');
+      return;
+    }
+
     modelInput.value = item.id;
     protocolSelect.value = item.protocol;
     protocolSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -105,7 +111,7 @@
     }
 
     if (item.externalAvailable) {
-      setStatus(`✓ ${item.id} sẽ dùng ${protocolLabel(item.protocol)} qua OpenCode Inference API.`, 'success');
+      setStatus(`✓ ${item.id} sẽ dùng ${protocolLabel(item.protocol)} qua OpenCode Zen API.`, 'success');
     } else {
       setStatus(item.reason || 'Model này chưa được xác nhận cho API bên ngoài OpenCode.', 'warn');
     }
@@ -115,8 +121,9 @@
     modelsCache = Array.isArray(models) ? models : [];
     modelSelect.innerHTML = '';
 
-    const available = modelsCache.filter(item => item.externalAvailable);
+    const available = modelsCache.filter(item => item.externalAvailable && !runtimeUnavailable.has(item.id));
     const restricted = modelsCache.filter(item => !item.externalAvailable);
+    const unavailable = modelsCache.filter(item => item.externalAvailable && runtimeUnavailable.has(item.id));
 
     const placeholder = document.createElement('option');
     placeholder.value = '';
@@ -141,9 +148,22 @@
       modelSelect.appendChild(group);
     }
 
+    if (unavailable.length) {
+      const group = document.createElement('optgroup');
+      group.label = '⛔ OpenCode vừa báo tạm không khả dụng';
+      for (const item of unavailable) {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = `${item.id} — Model is unavailable`;
+        option.disabled = true;
+        group.appendChild(option);
+      }
+      modelSelect.appendChild(group);
+    }
+
     if (restricted.length) {
       const group = document.createElement('optgroup');
-      group.label = '⚠️ Zen/OpenCode-only hoặc chưa xác nhận API ngoài';
+      group.label = '⚠️ OpenCode-only hoặc chưa xác nhận API ngoài';
       for (const item of restricted) {
         const option = document.createElement('option');
         option.value = item.id;
@@ -157,11 +177,14 @@
     if (preferredModel && available.some(item => item.id === preferredModel)) {
       modelSelect.value = preferredModel;
       applyOpenCodeModel(preferredModel);
+    } else if (preferredModel && unavailable.some(item => item.id === preferredModel)) {
+      modelSelect.value = '';
+      setStatus(`⛔ ${preferredModel} đang bị OpenCode báo tạm không khả dụng. Chọn model khác hoặc bấm Tải lại model để kiểm tra lại.`, 'warn');
     } else if (preferredModel && restricted.some(item => item.id === preferredModel)) {
       modelSelect.value = '';
       setStatus(`⚠️ Model đã lưu "${preferredModel}" không dùng được/không được xác nhận cho API ngoài. Hãy chọn model khác.`, 'warn');
     } else if (available.length) {
-      setStatus(`Đã tải ${available.length} model dùng được qua API ngoài; ${restricted.length} model bị khóa để tránh lỗi 403.`, 'success');
+      setStatus(`Đã tải ${available.length} model từ OpenCode Zen${unavailable.length ? `; ${unavailable.length} model đang tạm bị loại` : ''}.`, 'success');
     }
   }
 
@@ -202,7 +225,7 @@
     if (!isOpenCode) return;
 
     providerSelect.value = 'custom';
-    endpointInput.value = 'https://opencode.ai/inference/openai/v1';
+    endpointInput.value = 'https://opencode.ai/zen/v1';
     authTypeSelect.value = 'bearer';
     authTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
     await loadModels({ preferredModel });
@@ -217,6 +240,7 @@
   });
 
   refreshBtn.addEventListener('click', () => {
+    runtimeUnavailable.clear();
     loadModels({ force: true, preferredModel: modelInput.value.trim() });
   });
 
@@ -227,6 +251,48 @@
       if (modelInputGroup) modelInputGroup.style.display = '';
     }
   });
+
+  // custom-provider.js đã thay handleTestApiKey trước DOMContentLoaded. Vì file này được nạp sau,
+  // ta bọc handler thêm một lớp để ghi nhận trạng thái model thực tế mà OpenCode trả về.
+  const universalTestHandler = handleTestApiKey;
+  handleTestApiKey = async function handleTestApiKeyWithOpenCodeHealth() {
+    const shouldTrack = providerSelect.value === 'custom' && presetSelect.value === 'opencode';
+    const attemptedModel = modelInput.value.trim();
+    const result = await universalTestHandler();
+
+    if (!shouldTrack || !attemptedModel) return result;
+
+    const testText = apiKeyTestStatus ? apiKeyTestStatus.textContent || '' : '';
+    if (/model is unavailable/i.test(testText)) {
+      runtimeUnavailable.add(attemptedModel);
+      const failed = modelsCache.find(item => item.id === attemptedModel);
+      const next = modelsCache.find(item =>
+        item.externalAvailable &&
+        !runtimeUnavailable.has(item.id) &&
+        item.id !== attemptedModel &&
+        (!failed || item.protocol === failed.protocol)
+      ) || modelsCache.find(item =>
+        item.externalAvailable &&
+        !runtimeUnavailable.has(item.id) &&
+        item.id !== attemptedModel
+      );
+
+      renderModels(modelsCache, next ? next.id : '');
+      if (next) {
+        setStatus(`⛔ OpenCode vừa báo ${attemptedModel} không khả dụng. App đã loại tạm model này và chuyển sang ${next.id}; bấm Thử kết nối để kiểm tra model mới.`, 'warn');
+        if (apiKeyTestStatus) {
+          apiKeyTestStatus.textContent += ` → Đã chuyển sang ${next.id}; hãy thử kết nối lại.`;
+        }
+      } else {
+        setStatus(`⛔ OpenCode báo ${attemptedModel} không khả dụng và hiện không còn model thay thế trong danh sách. Bấm Tải lại model để kiểm tra lại sau.`, 'warn');
+      }
+    } else if (/^\s*✅/.test(testText)) {
+      runtimeUnavailable.delete(attemptedModel);
+      setStatus(`✓ ${attemptedModel} đã được OpenCode xác nhận hoạt động qua Zen API.`, 'success');
+    }
+
+    return result;
+  };
 
   if (openModalBtn) {
     openModalBtn.addEventListener('click', () => {
