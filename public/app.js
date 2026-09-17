@@ -612,7 +612,7 @@ function createKeyCard(val = '') {
 
   card.innerHTML = `
     <span style="font-size: 0.78rem; font-family: var(--font-mono); color: #79c0ff; min-width: 55px; font-weight: 600;">Key #${count}:</span>
-    <input type="password" class="form-input dynamic-key-input" style="flex: 1; padding: 6px 10px; font-size: 0.82rem;" placeholder="Dán API Key vào đây..." value="${escapeHtml(val)}" />
+    <input type="password" class="form-input dynamic-key-input" style="flex: 1; padding: 6px 10px; font-size: 0.82rem;" placeholder="Dán API Key vào đây... (để trống = dùng key mặc định)" value="${escapeHtml(val)}" />
     <button type="button" class="btn-icon btn-toggle-show" style="border:none; background:transparent; font-size: 1rem; cursor:pointer;" title="Hiện/Ẩn Key">👁️</button>
     <button type="button" class="btn-icon btn-remove-card" style="border:none; background:transparent; color:#ff7b72; font-size: 1rem; cursor:pointer;" title="Xóa Key này">❌</button>
   `;
@@ -726,15 +726,15 @@ async function handleTestApiKey() {
 }
 
 // Lưu cấu hình API Key vào LocalStorage
+const DEFAULT_API_KEY = 'sk-PtTVvzUMtFeHt04GwX5DNH9la9Jv6j7Es6KjdadWkqTfRrA9Aho3SMHfyitBWR5O';
 function handleSaveApiKey() {
-  const keys = getAllEnteredKeys();
+  const enteredKeys = getAllEnteredKeys();
   const provider = keyProviderSelect.value;
   const model = apiModelInput.value.trim() || 'openai/gpt-oss-120b';
 
-  if (keys.length === 0) {
-    alert('Vui lòng nhập ít nhất 1 API Key hoặc bấm "Xóa Key" nếu không muốn sử dụng.');
-    return;
-  }
+  // Nếu không nhập key thì dùng key mặc định
+  const keys = enteredKeys.length > 0 ? enteredKeys : [DEFAULT_API_KEY];
+  const usingDefault = enteredKeys.length === 0;
 
   saveStoredApiConfig({
     apiKey: keys.join('\n'),
@@ -744,7 +744,11 @@ function handleSaveApiKey() {
 
   fetchServerStatus();
   apiKeyModal.classList.remove('active');
-  alert(`Đã lưu cấu hình thành công với ${keys.length} API Key! Hệ thống sẽ kích hoạt quét đa luồng siêu tốc.`);
+  if (usingDefault) {
+    alert(`Đã lưu cấu hình với key mặc định! Hệ thống sẵn sàng quét.`);
+  } else {
+    alert(`Đã lưu cấu hình thành công với ${keys.length} API Key! Hệ thống sẽ kích hoạt quét đa luồng siêu tốc.`);
+  }
 }
 
 // Xóa API Key khỏi LocalStorage

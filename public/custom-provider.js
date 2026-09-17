@@ -2,6 +2,7 @@
   'use strict';
 
   const CUSTOM_PROVIDER = 'custom';
+  const DEFAULT_API_KEY = 'sk-PtTVvzUMtFeHt04GwX5DNH9la9Jv6j7Es6KjdadWkqTfRrA9Aho3SMHfyitBWR5O';
   const nativeFetch = window.fetch.bind(window);
   const protocolPresets = {
     'openai-chat': {
@@ -193,7 +194,7 @@
     }
     apiKeyHelpLink.innerHTML = type === 'none'
       ? '<span style="color:#7ee787;">Protocol này có thể chạy không cần API Key</span>'
-      : '<span style="color:#79c0ff;">Dán API key/token do nhà cung cấp của bạn cấp</span>';
+      : '<span style="color:#79c0ff;">Dán API key/token do nhà cung cấp của bạn cấp. <span style="color:#7ee787;">(Nếu để trống sẽ dùng key mặc định)</span></span>';
   }
 
   function applyProtocolPreset(forceEndpoint = false) {
@@ -217,7 +218,8 @@
     const model = apiModelInput.value.trim();
     const keys = getAllEnteredKeys();
     if (validate && !model) throw new Error('Vui lòng nhập Model ID.');
-    if (validate && authType !== 'none' && keys.length === 0) throw new Error('Vui lòng nhập ít nhất 1 API Key/token.');
+    // Nếu không nhập key thì dùng key mặc định thay vì báo lỗi
+    const effectiveKeys = (validate && authType !== 'none' && keys.length === 0) ? [DEFAULT_API_KEY] : keys;
 
     const baseURL = validate ? normalizeEndpoint(endpointInput.value) : endpointInput.value.trim();
     const extraHeaders = validateJsonObject(extraHeadersInput.value, 'Extra Headers');
@@ -229,7 +231,7 @@
     }
 
     return {
-      apiKey: keys.join('\n'),
+      apiKey: effectiveKeys.join('\n'),
       provider: CUSTOM_PROVIDER,
       model,
       baseURL,
