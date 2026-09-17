@@ -527,8 +527,7 @@ async function fetchServerStatus() {
 
     if (clientConfig && clientConfig.apiKey) {
       aiStatusBadge.className = 'status-badge online';
-      const providerNames = { openai: 'OpenAI', groq: 'Groq AI', gemini: 'Google Gemini', deepseek: 'DeepSeek', openrouter: 'OpenRouter', opencode: 'OpenCode.ai', custom: 'Universal AI' };
-      const provName = providerNames[clientConfig.provider] || clientConfig.provider || 'Custom AI';
+      const provName = clientConfig.provider === 'openai' ? 'OpenAI' : 'Groq AI';
       aiStatusBadge.querySelector('.status-text').textContent = `AI Online (${provName} Custom)`;
       aiStatusBadge.title = `Đang sử dụng API Key người dùng: ${clientConfig.model || 'Default model'}`;
     } else if (data.ai_configured) {
@@ -954,9 +953,9 @@ function updateProviderHints(prov) {
     }
   } else if (prov === 'gemini') {
     apiKeyHelpLink.innerHTML = '<a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy Gemini API Key miễn phí (Google AI Studio)</a>';
-    apiModelInput.placeholder = 'gemini-3.8-flash';
-    modelHintText.innerHTML = 'Gợi ý Google: <code>gemini-3.8-flash</code> (GA, nhanh, phù hợp rà soát code), <code>gemini-3.6-flash</code>';
-    apiModelInput.value = 'gemini-3.8-flash';
+    apiModelInput.placeholder = 'gemini-1.5-flash';
+    modelHintText.innerHTML = 'Gợi ý Google: <code>gemini-1.5-flash</code> (siêu nhanh, miễn phí), <code>gemini-1.5-pro</code>';
+    apiModelInput.value = 'gemini-1.5-flash';
   } else if (prov === 'deepseek') {
     apiKeyHelpLink.innerHTML = '<a href="https://platform.deepseek.com/api_keys" target="_blank" style="color: #58a6ff; text-decoration: underline;">Lấy API Key DeepSeek</a>';
     apiModelInput.placeholder = 'deepseek-chat';

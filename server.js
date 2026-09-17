@@ -13,7 +13,8 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { SAMPLES } from './data/samples.js';
-import { ScannerService, DEFAULT_OPENCODE_API_KEY } from './services/scanner.js';
+import { ScannerService, DEFAULT_OPENCODE_API_KEY } from './services/groq-scanner.js';
+import { ProjectScannerService } from './services/project-scanner.js';
 import { GitHubService } from './services/github.js';
 import {
   UniversalAIClient,
@@ -172,6 +173,12 @@ async function scanWithDefaultOpenCodePool(code, language) {
   };
 }
 
+const projectScannerService = new ProjectScannerService({
+  scanFile: async (code, language, customConfig) => customConfig
+    ? scannerService.scanCode(code, language || 'auto', customConfig)
+    : scanWithDefaultOpenCodePool(code, language || 'auto')
+});
+
 // ScannerService giữ nguyên interface OpenAI-compatible. Với provider custom,
 // UniversalAIClient dịch giao thức khác về cùng shape choices[0].message.content.
 const createBuiltInClient = scannerService.createClient.bind(scannerService);
@@ -191,7 +198,7 @@ app.get(['/', '/index.html'], (req, res, next) => {
     const enhanced = html.includes(marker)
       ? html.replace(
           marker,
-          `${marker}\n  <script src="custom-provider.js"></script>\n  <script src="opencode-models.js"></script>`
+          `${marker}\n  <script src="custom-provider.js"></script>\n  <script src="opencode-models.js"></script>\n  <script src="project-scan-ui.js"></script>`
         )
       : html;
     res.type('html').send(enhanced);
@@ -320,6 +327,43 @@ app.post('/api/config/test-key', async (req, res) => {
       success: false,
       error: err.message || 'API Key hoặc cấu hình API không hợp lệ.'
     });
+  }
+});
+
+// API: Quét project/folder với queue, gom file nhỏ và cross-file dependency analysis
+app.post('/api/scan-project', async (req, res) => {
+  const { files, apiKey, provider, model, baseURL } = req.body;
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp danh sách file mã nguồn.' });
+  }
+  if (files.length > 500) {
+    return res.status(400).json({ success: false, error: 'Tối đa 500 file mỗi lượt quét project.' });
+  }
+
+  try {
+    let customConfig = null;
+    if (provider === 'custom') {
+      const targetModel = typeof model === 'string' ? model.trim() : '';
+      if (!targetModel) return res.status(400).json({ success: false, error: 'Universal AI API cần tên Model.' });
+      const universalConfig = normalizeUniversalConfig(req.body);
+      const keys = getCustomKeys(apiKey, universalConfig.authType);
+      customConfig = {
+        apiKey: keys.join('\n'),
+        provider: 'custom',
+        model: targetModel,
+        baseURL: packUniversalConfig(universalConfig)
+      };
+    } else if (
+      apiKey && typeof apiKey === 'string' && apiKey.trim() && !isLegacyBrowserDefaultKey(apiKey)
+    ) {
+      customConfig = { apiKey, provider, model, baseURL };
+    }
+
+    const result = await projectScannerService.scanProject(files, customConfig);
+    return res.json({ success: true, timestamp: new Date().toISOString(), result });
+  } catch (err) {
+    console.error('Lỗi khi quét project:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Đã xảy ra lỗi khi quét project.' });
   }
 });
 
