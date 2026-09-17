@@ -25,8 +25,20 @@ const fileSearchInput = document.getElementById('fileSearchInput');
 const scanAllFolderBtn = document.getElementById('scanAllFolderBtn');
 
 const currentFileTitle = document.getElementById('currentFileTitle');
+const fileModifiedBadge = document.getElementById('fileModifiedBadge');
 const codeEditor = document.getElementById('codeEditor');
 const codeViewer = document.getElementById('codeViewer');
+const monacoEditorContainer = document.getElementById('monacoEditorContainer');
+const problemsPanel = document.getElementById('problemsPanel');
+const problemsBadge = document.getElementById('problemsBadge');
+const problemsList = document.getElementById('problemsList');
+const reScanCurrentBtn = document.getElementById('reScanCurrentBtn');
+
+let monacoInstance = null;
+let monacoDecorations = [];
+let isEditorModified = false;
+let isMonacoLoaded = false;
+
 const languageSelect = document.getElementById('languageSelect');
 const sampleChips = document.getElementById('sampleChips');
 const scanBtn = document.getElementById('scanBtn');
@@ -113,8 +125,283 @@ const CODE_EXTENSIONS = new Set([
   'py', 'js', 'jsx', 'ts', 'tsx', 'php', 'java', 'go', 'cs', 'sql', 'c', 'cpp', 'rb', 'sh', 'html', 'htm', 'json', 'yaml', 'yml', 'db', 'sqlite', 'sqlite3'
 ]);
 
+function getMonacoLanguage(lang) {
+  if (!lang || lang === 'auto') return 'javascript';
+  const map = {
+    'python': 'python',
+    'javascript': 'javascript',
+    'typescript': 'typescript',
+    'php': 'php',
+    'java': 'java',
+    'go': 'go',
+    'csharp': 'csharp',
+    'sql': 'sql',
+    'html': 'html',
+    'c': 'c',
+    'cpp': 'cpp',
+    'ruby': 'ruby',
+    'bash': 'shell',
+    'json': 'json',
+    'yaml': 'yaml'
+  };
+  return map[lang.toLowerCase()] || 'plaintext';
+}
+
+function getEditorCode() {
+  if (isMonacoLoaded && monacoInstance) {
+    return monacoInstance.getValue();
+  }
+  return codeEditor ? codeEditor.value : '';
+}
+
+function setEditorCode(code, lang) {
+  const content = code || '';
+  if (codeEditor) codeEditor.value = content;
+  if (isMonacoLoaded && monacoInstance) {
+    monacoInstance.setValue(content);
+    if (lang) {
+      const monacoLang = getMonacoLanguage(lang);
+      const model = monacoInstance.getModel();
+      if (model && window.monaco) {
+        window.monaco.editor.setModelLanguage(model, monacoLang);
+      }
+    }
+  }
+  setFileModifiedState(false);
+  updateEditorStats();
+}
+
+function setFileModifiedState(isModified) {
+  isEditorModified = isModified;
+  if (fileModifiedBadge) {
+    fileModifiedBadge.style.display = isModified ? 'inline-block' : 'none';
+  }
+  if (reScanCurrentBtn) {
+    reScanCurrentBtn.style.display = (isModified && currentActiveReport) ? 'inline-flex' : 'none';
+  }
+  if (isModified && isMonacoLoaded && currentActiveReport && currentActiveReport.vulnerabilities) {
+    updateMonacoDecorations(currentActiveReport.vulnerabilities, true);
+    renderProblemsPanel(currentActiveReport.vulnerabilities, true);
+  }
+}
+
+function fallbackToTextarea() {
+  isMonacoLoaded = false;
+  if (monacoEditorContainer) monacoEditorContainer.style.display = 'none';
+  if (codeEditor) codeEditor.style.display = 'block';
+}
+
+function initMonacoEditor() {
+  const container = document.getElementById('monacoEditorContainer');
+  if (!container) return;
+
+  if (typeof window.require !== 'undefined') {
+    try {
+      window.require.config({
+        paths: {
+          vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs'
+        }
+      });
+
+      window.require(['vs/editor/editor.main'], function () {
+        if (!window.monaco || !window.monaco.editor) {
+          fallbackToTextarea();
+          return;
+        }
+        isMonacoLoaded = true;
+        monacoInstance = window.monaco.editor.create(container, {
+          value: codeEditor ? codeEditor.value : '',
+          language: getMonacoLanguage(languageSelect ? languageSelect.value : 'auto'),
+          theme: 'vs-dark',
+          automaticLayout: true,
+          fontSize: 13,
+          fontFamily: "'Fira Code', Consolas, 'Courier New', monospace",
+          fontLigatures: true,
+          minimap: { enabled: true, renderCharacters: false },
+          scrollBeyondLastLine: false,
+          lineNumbers: 'on',
+          renderLineHighlight: 'all',
+          glyphMargin: true,
+          readOnly: false,
+          roundedSelection: true,
+          cursorBlinking: 'smooth',
+          overviewRulerBorder: false,
+          wordWrap: 'on'
+        });
+
+        monacoInstance.onDidChangeModelContent(() => {
+          const val = monacoInstance.getValue();
+          if (codeEditor) codeEditor.value = val;
+          if (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]) {
+            uploadedFiles[activeFileIndex].content = val;
+          }
+          updateEditorStats();
+          setFileModifiedState(true);
+        });
+
+        if (codeEditor) codeEditor.style.display = 'none';
+        if (codeViewer) codeViewer.style.display = 'none';
+      }, function (err) {
+        console.warn('Monaco load failed, falling back:', err);
+        fallbackToTextarea();
+      });
+    } catch (e) {
+      console.warn('Error loading Monaco config:', e);
+      fallbackToTextarea();
+    }
+  } else {
+    fallbackToTextarea();
+  }
+}
+
+function updateMonacoDecorations(vulnerabilities = [], isDimmed = false) {
+  if (!isMonacoLoaded || !monacoInstance || !window.monaco) return;
+  const model = monacoInstance.getModel();
+  if (!model) return;
+
+  const totalLines = model.getLineCount();
+  const newDecorations = [];
+
+  vulnerabilities.forEach(v => {
+    let startLine = Number.parseInt(v.start_line || v.line_number, 10);
+    if (!Number.isFinite(startLine) || startLine < 1) startLine = 1;
+    if (startLine > totalLines) startLine = totalLines;
+
+    let endLine = Number.parseInt(v.end_line || startLine, 10);
+    if (!Number.isFinite(endLine) || endLine < startLine) endLine = startLine;
+    if (endLine > totalLines) endLine = totalLines;
+
+    const startCol = 1;
+    const endCol = model.getLineMaxColumn(endLine);
+
+    const sev = (v.severity || 'Cao').toLowerCase();
+    let sevClass = 'monaco-vuln-range-high';
+    if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevClass = 'monaco-vuln-range-critical';
+    else if (sev.includes('thấp') || sev.includes('low')) sevClass = 'monaco-vuln-range-low';
+    else if (sev.includes('trung') || sev.includes('medium')) sevClass = 'monaco-vuln-range-medium';
+
+    const className = isDimmed ? `${sevClass} monaco-vuln-range-dimmed` : sevClass;
+
+    const hoverMd = new window.monaco.MarkdownString();
+    hoverMd.isTrusted = true;
+    hoverMd.appendMarkdown(`**[${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}**\n\n`);
+    hoverMd.appendMarkdown(`- **Tiêu chuẩn**: \`${v.owasp_category || 'OWASP Top 10:2025'}\` | \`${v.cwe || 'CWE'}\`\n`);
+    hoverMd.appendMarkdown(`- **Độ tin cậy**: ${v.confidence || 'Cao'}\n\n`);
+    if (v.explanation) hoverMd.appendMarkdown(`**Giải thích:** ${v.explanation}\n\n`);
+    if (v.remediation) hoverMd.appendMarkdown(`**Khắc phục:** ${v.remediation}`);
+
+    newDecorations.push({
+      range: new window.monaco.Range(startLine, startCol, endLine, endCol),
+      options: {
+        isWholeLine: true,
+        className: className,
+        glyphMarginClassName: 'monaco-vuln-glyph',
+        hoverMessage: hoverMd,
+        overviewRuler: {
+          color: sevClass.includes('critical') ? '#f85149' : (sevClass.includes('medium') ? '#d29922' : '#ff7b72'),
+          position: window.monaco.editor.OverviewRulerLane.Right
+        }
+      }
+    });
+  });
+
+  monacoDecorations = monacoInstance.deltaDecorations(monacoDecorations, newDecorations);
+}
+
+function revealVulnerabilityInEditor(vuln) {
+  if (!vuln) return;
+  const line = Number.parseInt(vuln.start_line || vuln.line_number, 10) || 1;
+
+  if (isMonacoLoaded && monacoInstance) {
+    monacoInstance.revealLineInCenter(line);
+    monacoInstance.setPosition({ lineNumber: line, column: 1 });
+    monacoInstance.focus();
+  } else {
+    scrollToCodeLine(line);
+  }
+}
+
+function renderProblemsPanel(vulnerabilities = [], isDimmed = false) {
+  if (!problemsPanel || !problemsList) return;
+  const count = vulnerabilities.length;
+  if (problemsBadge) problemsBadge.textContent = count;
+
+  if (count === 0) {
+    problemsList.innerHTML = '<div class="problems-empty">Chưa có phát hiện bảo mật nào trong file này.</div>';
+    return;
+  }
+
+  let html = '';
+  vulnerabilities.forEach((v, idx) => {
+    const sev = (v.severity || 'Cao').toLowerCase();
+    let sevKey = 'high';
+    if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevKey = 'critical';
+    else if (sev.includes('thấp') || sev.includes('low')) sevKey = 'low';
+    else if (sev.includes('trung') || sev.includes('medium')) sevKey = 'medium';
+
+    const startLine = v.start_line || v.line_number || 1;
+    const endLine = v.end_line || startLine;
+    const lineLabel = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`;
+
+    html += `
+      <div class="problem-row severity-${sevKey}" data-vuln-index="${idx}" title="Bấm để nhảy tới vị trí trong editor">
+        <div class="problem-row-left">
+          <span class="problem-severity-tag ${sevKey}">${escapeHtml(v.severity || 'Cao')}</span>
+          <span class="problem-title">${escapeHtml(v.type || 'Lỗ hổng bảo mật')}</span>
+          <span class="problem-cwe">${escapeHtml(v.cwe || 'CWE')}</span>
+          ${isDimmed ? '<span style="font-size:0.7rem; color:#d29922;">(Mã nguồn đã đổi)</span>' : ''}
+        </div>
+        <div class="problem-row-right">
+          <span class="problem-location">${lineLabel}</span>
+        </div>
+      </div>
+    `;
+  });
+
+  problemsList.innerHTML = html;
+
+  problemsList.querySelectorAll('.problem-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = Number.parseInt(row.getAttribute('data-vuln-index'), 10);
+      const vuln = vulnerabilities[idx];
+      revealVulnerabilityInEditor(vuln);
+    });
+  });
+}
+
+function renderSystemError(info) {
+  const errMessage = typeof info === 'string' ? info : (info.error || info.message || 'Lỗi không xác định');
+  const provider = info.provider || 'AI Provider';
+  const model = info.model || 'N/A';
+  const status = info.status ? `HTTP ${info.status}` : 'Kết nối thất bại';
+
+  resultsContainer.innerHTML = `
+    <div class="system-error-card">
+      <div class="system-error-title">
+        <span>⚠️ LỖI HỆ THỐNG / KẾT NỐI API</span>
+      </div>
+      <div class="system-error-meta">
+        <strong>Trạng thái:</strong> ${escapeHtml(status)} | <strong>Provider:</strong> ${escapeHtml(provider)} | <strong>Model:</strong> ${escapeHtml(model)}
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-main); margin-bottom: 6px;">
+        Không thể hoàn tất quá trình rà soát bảo mật do sự cố đường truyền hoặc dịch vụ AI từ chối yêu cầu.
+      </p>
+      <div class="system-error-pre">${escapeHtml(errMessage)}</div>
+      <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);">
+        💡 <strong>Khuyến nghị khắc phục:</strong>
+        <ul style="padding-left: 18px; margin-top: 4px;">
+          <li>Kiểm tra lại tính hợp lệ của API Key trong cấu hình 🔑 API Key.</li>
+          <li>Nếu gặp lỗi Quota/Rate Limit (429) hoặc 403 (Console Free Tier), vui lòng chuyển sang model khác hoặc thêm API Key dự phòng.</li>
+          <li>File hiện tại <strong>CHƯA ĐƯỢC XÁC NHẬN AN TOÀN</strong>. Vui lòng bấm quét lại sau khi kiểm tra kết nối.</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
+  initMonacoEditor();
   fetchServerStatus();
   fetchSamples();
   setupEventListeners();
@@ -278,17 +565,20 @@ function loadSample(sample, activeChip) {
   if (activeChip) activeChip.classList.add('active');
 
   currentFileTitle.textContent = `Mẫu: ${sample.name}`;
-  codeEditor.value = sample.code;
   languageSelect.value = sample.language || 'auto';
-  updateEditorStats();
+  setEditorCode(sample.code, sample.language || 'auto');
   switchViewTab('detail');
   resetResults();
-  codeEditor.focus();
+  if (isMonacoLoaded && monacoInstance) {
+    monacoInstance.focus();
+  } else if (codeEditor) {
+    codeEditor.focus();
+  }
 }
 
 // Cập nhật số dòng & ký tự
 function updateEditorStats() {
-  const text = codeEditor.value;
+  const text = getEditorCode();
   const lines = text ? text.split('\n').length : 0;
   lineCount.textContent = lines;
   charCount.textContent = text.length;
@@ -390,9 +680,8 @@ function selectUploadedFile(index) {
   const file = uploadedFiles[index];
 
   currentFileTitle.textContent = file.path;
-  codeEditor.value = file.content;
   languageSelect.value = file.language || 'auto';
-  updateEditorStats();
+  setEditorCode(file.content, file.language || 'auto');
   renderFileTree();
 
   switchViewTab('detail');
@@ -401,7 +690,9 @@ function selectUploadedFile(index) {
     renderReport(file.result, file.duration || '0.1');
   } else {
     resetResults();
-    renderCodeViewerWithHighlights(file.content, []);
+    if (!isMonacoLoaded) {
+      renderCodeViewerWithHighlights(file.content, []);
+    }
   }
 }
 
@@ -435,7 +726,22 @@ function setupEventListeners() {
     if (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]) {
       uploadedFiles[activeFileIndex].content = codeEditor.value;
     }
+    setFileModifiedState(true);
   });
+
+  languageSelect.addEventListener('change', () => {
+    if (isMonacoLoaded && monacoInstance) {
+      const monacoLang = getMonacoLanguage(languageSelect.value);
+      const model = monacoInstance.getModel();
+      if (model && window.monaco) {
+        window.monaco.editor.setModelLanguage(model, monacoLang);
+      }
+    }
+  });
+
+  if (reScanCurrentBtn) {
+    reScanCurrentBtn.addEventListener('click', handleScan);
+  }
 
   if (fileSearchInput) {
     fileSearchInput.addEventListener('input', renderFileTree);
@@ -446,7 +752,7 @@ function setupEventListeners() {
   tabHistoryView.addEventListener('click', () => switchViewTab('history'));
 
   clearBtn.addEventListener('click', () => {
-    codeEditor.value = '';
+    setEditorCode('', 'javascript');
     uploadedFiles = [];
     activeFileIndex = -1;
     folderSidebar.style.display = 'none';
@@ -454,7 +760,6 @@ function setupEventListeners() {
     tabSummaryView.style.display = 'none';
     currentFileTitle.textContent = 'Mã nguồn cần quét';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    updateEditorStats();
     switchViewTab('detail');
     resetResults();
   });
@@ -472,24 +777,31 @@ function setupEventListeners() {
   scanBtn.addEventListener('click', handleScan);
   scanAllFolderBtn.addEventListener('click', handleScanAllFolder);
 
-  // Bật / Tắt chế độ Chỉnh sửa mã nguồn
+  // Bật / Tắt chế độ Chỉnh sửa mã nguồn / Định dạng
   if (toggleEditBtn) {
     toggleEditBtn.addEventListener('click', () => {
-      isEditMode = !isEditMode;
-      if (isEditMode) {
-        codeEditor.style.display = 'block';
-        codeViewer.style.display = 'none';
-        toggleEditBtn.classList.add('active-edit');
-        if (toggleEditText) toggleEditText.textContent = 'Đang sửa';
-        codeEditor.focus();
+      if (isMonacoLoaded && monacoInstance) {
+        monacoInstance.focus();
+        const action = monacoInstance.getAction('editor.action.formatDocument');
+        if (action) {
+          action.run();
+        }
       } else {
-        // Tắt chế độ sửa, quay lại xem viewer (nếu có báo cáo phân tích trước đó)
-        toggleEditBtn.classList.remove('active-edit');
-        if (toggleEditText) toggleEditText.textContent = 'Chỉnh sửa';
-        if (currentActiveReport && currentActiveReport.vulnerabilities) {
-          renderCodeViewerWithHighlights(codeEditor.value, currentActiveReport.vulnerabilities);
+        isEditMode = !isEditMode;
+        if (isEditMode) {
+          codeEditor.style.display = 'block';
+          codeViewer.style.display = 'none';
+          toggleEditBtn.classList.add('active-edit');
+          if (toggleEditText) toggleEditText.textContent = 'Đang sửa';
+          codeEditor.focus();
         } else {
-          renderCodeViewerWithHighlights(codeEditor.value, []);
+          toggleEditBtn.classList.remove('active-edit');
+          if (toggleEditText) toggleEditText.textContent = 'Chỉnh sửa';
+          if (currentActiveReport && currentActiveReport.vulnerabilities) {
+            renderCodeViewerWithHighlights(codeEditor.value, currentActiveReport.vulnerabilities);
+          } else {
+            renderCodeViewerWithHighlights(codeEditor.value, []);
+          }
         }
       }
     });
@@ -498,7 +810,7 @@ function setupEventListeners() {
   // Xuất file mã nguồn hiện tại về máy (.js, .py, .php, .html,...)
   if (exportCodeBtn) {
     exportCodeBtn.addEventListener('click', () => {
-      const code = codeEditor.value;
+      const code = getEditorCode();
       if (!code || !code.trim()) {
         alert('Không có nội dung mã nguồn để xuất file.');
         return;
@@ -900,9 +1212,8 @@ async function handleScanAllFolder() {
     const file = uploadedFiles[i];
     activeFileIndex = i;
     currentFileTitle.textContent = file.path;
-    codeEditor.value = file.content;
     languageSelect.value = file.language || 'auto';
-    updateEditorStats();
+    setEditorCode(file.content, file.language || 'auto');
     renderFileTree();
 
     const pct = Math.round(((i) / uploadedFiles.length) * 100);
@@ -1335,9 +1646,8 @@ function restoreHistorySingleFile(index) {
   const item = history[index];
 
   currentFileTitle.textContent = item.title;
-  codeEditor.value = item.code || '';
   languageSelect.value = item.language || 'auto';
-  updateEditorStats();
+  setEditorCode(item.code || '', item.language || 'auto');
   switchViewTab('detail');
   if (item.result) {
     renderReport(item.result, item.duration || '0.1');
@@ -1348,12 +1658,21 @@ function restoreHistorySingleFile(index) {
 function resetResults() {
   currentActiveReport = null;
   if (exportReportBtn) exportReportBtn.style.display = 'none';
+  if (reScanCurrentBtn) reScanCurrentBtn.style.display = 'none';
+  if (fileModifiedBadge) fileModifiedBadge.style.display = 'none';
+  isEditorModified = false;
+
+  if (isMonacoLoaded && monacoInstance) {
+    monacoDecorations = monacoInstance.deltaDecorations(monacoDecorations, []);
+  }
+  renderProblemsPanel([]);
+
   if (toggleEditBtn) {
     isEditMode = true;
     toggleEditBtn.classList.remove('active-edit');
     if (toggleEditText) toggleEditText.textContent = 'Chỉnh sửa';
   }
-  if (codeEditor && codeViewer) {
+  if (!isMonacoLoaded && codeEditor && codeViewer) {
     codeEditor.style.display = 'block';
     codeViewer.style.display = 'none';
   }
@@ -1379,10 +1698,14 @@ function resetResults() {
 
 // Gửi yêu cầu quét mã nguồn cho file hiện tại
 async function handleScan() {
-  const code = codeEditor.value.trim();
+  const code = getEditorCode().trim();
   if (!code) {
     alert('Vui lòng dán hoặc nhập mã nguồn cần kiểm tra bảo mật.');
-    codeEditor.focus();
+    if (isMonacoLoaded && monacoInstance) {
+      monacoInstance.focus();
+    } else if (codeEditor) {
+      codeEditor.focus();
+    }
     return;
   }
 
@@ -1402,7 +1725,7 @@ async function handleScan() {
       <div style="text-align: center; width: 100%; max-width: 460px;">
         <h3 style="margin-bottom: 6px;">Đang rà soát lỗ hổng bảo mật...</h3>
         <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
-          Đang quét ${codeLines} dòng mã nguồn (${chunkCount} phân đoạn) theo chuẩn OWASP Top 10.
+          Đang quét ${codeLines} dòng mã nguồn (${chunkCount} phân đoạn) theo chuẩn OWASP Top 10:2025.
         </p>
 
         <div class="scan-progress-container">
@@ -1477,8 +1800,13 @@ async function handleScan() {
     const data = await res.json();
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-    if (!data.success) {
-      renderError(data.error || 'Đã xảy ra lỗi không xác định.');
+    if (!res.ok || !data.success) {
+      renderSystemError({
+        error: data.error || `Máy chủ phản hồi mã lỗi HTTP ${res.status}`,
+        status: res.status,
+        provider: clientConfig?.provider || 'Server AI',
+        model: clientConfig?.model || 'N/A'
+      });
     } else {
       if (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]) {
         uploadedFiles[activeFileIndex].result = data.result;
@@ -1503,7 +1831,12 @@ async function handleScan() {
       renderReport(data.result, duration);
     }
   } catch (err) {
-    renderError('Không thể kết nối đến máy chủ quét: ' + err.message);
+    clearInterval(progressInterval);
+    renderSystemError({
+      error: 'Không thể kết nối đến máy chủ quét: ' + err.message,
+      provider: clientConfig?.provider || 'Network',
+      model: clientConfig?.model || 'N/A'
+    });
   } finally {
     isScanning = false;
     scanBtn.disabled = false;
@@ -1527,9 +1860,8 @@ function restoreHistoryItem(index) {
     }
   } else if (item.type === 'single_file') {
     currentFileTitle.textContent = item.title;
-    codeEditor.value = item.code || '';
     languageSelect.value = item.language || 'auto';
-    updateEditorStats();
+    setEditorCode(item.code || '', item.language || 'auto');
     switchViewTab('detail');
     if (item.result) {
       renderReport(item.result, item.duration || '0.1');
@@ -1549,6 +1881,13 @@ function renderError(message) {
     </div>
   `;
 }
+
+// Global helper để click finding từ report card
+window.revealVulnerabilityByIndex = function(index) {
+  if (!currentActiveReport || !currentActiveReport.vulnerabilities) return;
+  const vuln = currentActiveReport.vulnerabilities[index];
+  revealVulnerabilityInEditor(vuln);
+};
 
 // Render Báo cáo kết quả
 function renderReport(result, duration) {
@@ -1600,16 +1939,10 @@ function renderReport(result, duration) {
 
   vulns.forEach((v, index) => {
     const severitySlug = (v.severity || 'Cao').toLowerCase().replace(/\s+/g, '-');
-    // Tự động phân tích số dòng từ chuỗi (ví dụ: 'lines 45-53' hoặc 'line 45' hoặc 'Dòng 45')
-    let lineToScroll = v.line_number;
-    if (!lineToScroll && v.affected_lines) {
-      const match = v.affected_lines.match(/(?:lines?|dòng)\s*(\d+)/i);
-      if (match) {
-        lineToScroll = parseInt(match[1], 10);
-        v.line_number = lineToScroll;
-      }
-    }
-    const lineLabel = lineToScroll ? `Dòng ${lineToScroll}: ` : '';
+    const startLine = Number.parseInt(v.start_line || v.line_number, 10) || 1;
+    const endLine = Number.parseInt(v.end_line || startLine, 10) || startLine;
+    const lineLabel = startLine === endLine ? `Dòng ${startLine}: ` : `Dòng ${startLine}-${endLine}: `;
+    const locationBtnText = startLine === endLine ? `dòng ${startLine}` : `dòng ${startLine}-${endLine}`;
 
     html += `
       <div class="vuln-card">
@@ -1618,7 +1951,11 @@ function renderReport(result, duration) {
             <span class="vuln-badge-severity severity-${severitySlug}">${escapeHtml(v.severity || 'Cao')}</span>
             <strong style="font-size: 0.95rem;">${index + 1}. ${escapeHtml(v.type || 'Lỗ hổng bảo mật')}</strong>
           </div>
-          <span class="vuln-category-badge">${escapeHtml(v.owasp_category || 'OWASP Top 10')}</span>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span class="vuln-category-badge">${escapeHtml(v.owasp_category || 'OWASP Top 10:2025')}</span>
+            ${v.cwe ? `<span class="vuln-category-badge" style="background:rgba(56,139,253,0.15); color:#79c0ff; border-color:rgba(56,139,253,0.3); font-family:var(--font-mono);">${escapeHtml(v.cwe)}</span>` : ''}
+            ${v.confidence ? `<span class="vuln-category-badge" style="background:rgba(63,185,80,0.12); color:#7ee787; border-color:rgba(63,185,80,0.3);">Tin cậy: ${escapeHtml(v.confidence)}</span>` : ''}
+          </div>
         </div>
 
         <div class="vuln-card-body">
@@ -1626,17 +1963,11 @@ function renderReport(result, duration) {
             <div class="vuln-field">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                 <div class="vuln-field-label">📍 Vị trí / Đoạn code có lỗ hổng:</div>
-                ${lineToScroll ? `
-                  <button class="btn-goto-line" onclick="scrollToCodeLine(${lineToScroll})" title="Bấm để cuộn và bôi đỏ ngay dòng ${lineToScroll} trong khung code">
-                    🔍 Xem ngay dòng ${lineToScroll} ➔
-                  </button>
-                ` : `
-                  <button class="btn-goto-line" onclick="searchAndHighlightSnippet('${escapeJsString(v.affected_lines)}')" title="Bấm để tìm và bôi đỏ đoạn code này">
-                    🔍 Tìm đến dòng lỗi ➔
-                  </button>
-                `}
+                <button class="btn-goto-line" onclick="window.revealVulnerabilityByIndex(${index})" title="Bấm để cuộn và focus ngay tới vị trí trong editor">
+                  🔍 Xem ngay ${locationBtnText} ➔
+                </button>
               </div>
-              <div class="vuln-code-snippet" style="color: #ff7b72; border-color: rgba(248,81,73,0.4); background: rgba(248,81,73,0.08); cursor: pointer;" onclick="scrollToCodeLine(${lineToScroll || 1})" title="Bấm vào để cuộn tới dòng code">
+              <div class="vuln-code-snippet" style="color: #ff7b72; border-color: rgba(248,81,73,0.4); background: rgba(248,81,73,0.08); cursor: pointer;" onclick="window.revealVulnerabilityByIndex(${index})" title="Bấm vào để cuộn tới dòng code">
                 <strong>${lineLabel}</strong>${escapeHtml(v.affected_lines)}
               </div>
             </div>
@@ -1692,11 +2023,18 @@ function renderReport(result, duration) {
 
   resultsContainer.innerHTML = html;
 
-  // Bôi đỏ chính xác dòng code trên khung codeViewer
-  renderCodeViewerWithHighlights(codeEditor.value, vulns);
+  // Cập nhật decorations trên Monaco Editor & Problems panel
+  updateMonacoDecorations(vulns, false);
+  renderProblemsPanel(vulns, false);
+  setFileModifiedState(false);
+
+  // Fallback bôi đỏ codeViewer nếu không có Monaco
+  if (!isMonacoLoaded) {
+    renderCodeViewerWithHighlights(codeEditor ? codeEditor.value : '', vulns);
+  }
 }
 
-// Render Code Viewer kèm số dòng và bôi đỏ chính xác dòng bị lỗi
+// Render Code Viewer kèm số dòng và bôi đỏ chính xác dòng bị lỗi (fallback khi không có Monaco)
 function renderCodeViewerWithHighlights(codeText, vulnerabilities = []) {
   if (!codeViewer) return;
 
@@ -1707,39 +2045,23 @@ function renderCodeViewerWithHighlights(codeText, vulnerabilities = []) {
   vulnerabilities.forEach(v => {
     let foundLine = -1;
 
-    // 1. Nếu AI trả về line_number cụ thể
-    if (v.line_number && v.line_number > 0 && v.line_number <= lines.length) {
+    if (v.start_line && v.start_line > 0 && v.start_line <= lines.length) {
+      foundLine = v.start_line - 1;
+    } else if (v.line_number && v.line_number > 0 && v.line_number <= lines.length) {
       foundLine = v.line_number - 1;
-    } 
-    // 2. Tìm theo affected_lines
-    else if (v.affected_lines) {
+    } else if (v.affected_lines) {
       const raw = v.affected_lines.trim();
-      // Khớp trực tiếp
       const directIdx = lines.findIndex(l => l.trim().length > 3 && (l.includes(raw) || raw.includes(l.trim())));
       if (directIdx >= 0) {
         foundLine = directIdx;
-      } else {
-        // Tách các từ khóa chính (ví dụ: evp_bytestokey, hashlib.md5, requests.get...)
-        const tokens = raw.split(/[\s,;()=]+/).filter(t => t.length > 4 && !['def', 'return', 'import', 'const', 'function'].includes(t));
-        for (const token of tokens) {
-          const tIdx = lines.findIndex(l => l.includes(token));
-          if (tIdx >= 0) {
-            foundLine = tIdx;
-            break;
-          }
-        }
       }
     }
 
     if (foundLine >= 0) {
       vulnLineMap.set(foundLine, v.type);
-      if (!v.line_number) {
-        v.line_number = foundLine + 1;
-      }
     }
   });
 
-  // Hiển thị codeViewer kèm số dòng và bôi đỏ dòng lỗi
   codeEditor.style.display = 'none';
   codeViewer.style.display = 'block';
 
@@ -1759,6 +2081,13 @@ function renderCodeViewerWithHighlights(codeText, vulnerabilities = []) {
 
 // Cuộn tới dòng code lỗi khi người dùng bấm nút xem
 function scrollToCodeLine(lineNum) {
+  if (isMonacoLoaded && monacoInstance) {
+    monacoInstance.revealLineInCenter(lineNum);
+    monacoInstance.setPosition({ lineNumber: lineNum, column: 1 });
+    monacoInstance.focus();
+    return;
+  }
+
   if (codeViewer && codeViewer.style.display === 'none') {
     codeEditor.style.display = 'none';
     codeViewer.style.display = 'block';
@@ -1775,10 +2104,25 @@ function scrollToCodeLine(lineNum) {
 
 // Tìm và cuộn đến dòng code theo snippet văn bản
 function searchAndHighlightSnippet(snippetText) {
-  if (!snippetText || !codeViewer) return;
+  if (!snippetText) return;
+
+  if (isMonacoLoaded && monacoInstance) {
+    const model = monacoInstance.getModel();
+    if (model) {
+      const firstLine = snippetText.trim().split('\n')[0] || snippetText;
+      const matches = model.findMatches(firstLine, false, false, false, null, false);
+      if (matches && matches.length > 0) {
+        const match = matches[0];
+        monacoInstance.revealRangeInCenter(match.range);
+        monacoInstance.setPosition({ lineNumber: match.range.startLineNumber, column: match.range.startColumn });
+        monacoInstance.focus();
+        return;
+      }
+    }
+  }
+
+  if (!codeViewer) return;
   const lines = codeViewer.querySelectorAll('.code-line');
-  
-  // Trích xuất các token quan trọng (tên hàm, tên biến)
   const tokens = snippetText.split(/[\s,;()=]+/).filter(t => t.length > 3 && !['def', 'return', 'import', 'const', 'function', 'lines'].includes(t.toLowerCase()));
 
   for (let lineEl of lines) {
@@ -1792,7 +2136,6 @@ function searchAndHighlightSnippet(snippetText) {
       return;
     }
   }
-  // Nếu không tìm thấy thì cuộn dòng 1
   scrollToCodeLine(1);
 }
 

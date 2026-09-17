@@ -198,3 +198,56 @@ test('15. OPENAI_API_ENDPOINT pointing to opencode.ai sets OpenCode provider', (
   }
 });
 
+test('16. validateAiResult normalizes line ranges, cwe, and confidence', () => {
+  const svc = new ScannerService();
+  const rawResponse = {
+    is_safe: false,
+    overall_summary: 'Tìm thấy lỗ hổng',
+    vulnerabilities: [
+      {
+        type: 'SQL Injection',
+        severity: 'Cao',
+        owasp_category: 'A03:2025 - Injection',
+        cwe: 'CWE-89',
+        start_line: 12,
+        end_line: 15,
+        affected_lines: 'SELECT * FROM users WHERE id = ' + 1,
+        explanation: 'SQLi',
+        remediation: 'Use parameters'
+      },
+      {
+        type: 'Legacy finding without range',
+        line_number: 42,
+        explanation: 'Old format finding'
+      }
+    ]
+  };
+  const validated = svc.validateAiResult(rawResponse);
+  assert.equal(validated.vulnerabilities.length, 2);
+  const v1 = validated.vulnerabilities[0];
+  assert.equal(v1.start_line, 12);
+  assert.equal(v1.end_line, 15);
+  assert.equal(v1.line_number, 12);
+  assert.equal(v1.cwe, 'CWE-89');
+  assert.equal(v1.confidence, 'Cao');
+
+  const v2 = validated.vulnerabilities[1];
+  assert.equal(v2.start_line, 42);
+  assert.equal(v2.end_line, 42);
+  assert.equal(v2.line_number, 42);
+  assert.equal(v2.cwe, 'CWE-Other');
+});
+
+test('17. mockAnalysis provides line range, CWE, and OWASP Top 10:2025', () => {
+  const svc = new ScannerService();
+  const code = 'const query = "SELECT * FROM users WHERE id = " + userId;\nconst apiKey = "sk-live-1234567890abcdef";';
+  const res = svc.mockAnalysis(code, 'javascript');
+  assert.equal(res.is_safe, false);
+  assert.ok(res.vulnerabilities.length >= 2);
+  const sqli = res.vulnerabilities.find(v => v.type.includes('SQL'));
+  assert.ok(sqli);
+  assert.equal(sqli.cwe, 'CWE-89');
+  assert.ok(sqli.owasp_category.includes('2025'));
+  assert.equal(sqli.start_line, 1);
+  assert.equal(sqli.end_line, 1);
+});

@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 </head>
 <body>
   <div class="glow-bg"></div>
@@ -76,6 +77,7 @@
         <div class="panel-title-group">
           <span class="panel-icon">💻</span>
           <h2 id="currentFileTitle">Mã nguồn cần quét</h2>
+          <span id="fileModifiedBadge" class="file-modified-badge" style="display: none;">● Đã sửa</span>
         </div>
         <div class="editor-controls">
           <select id="languageSelect" class="styled-select" title="Chọn ngôn ngữ lập trình">
@@ -152,13 +154,33 @@
         </div>
       </div>
 
-      <!-- Code Editor Area -->
+      <!-- Code Editor Area (Monaco Engine with Fallback) -->
       <div class="editor-wrapper">
-        <textarea id="codeEditor" spellcheck="false" placeholder="// Dán đoạn mã nguồn bạn muốn kiểm tra bảo mật vào đây...
+        <div id="monacoEditorContainer" class="monaco-editor-container"></div>
+        <textarea id="codeEditor" spellcheck="false" style="display: none;" placeholder="// Dán đoạn mã nguồn bạn muốn kiểm tra bảo mật vào đây...
 // Hoặc bấm các mẫu có sẵn ở thanh phía trên (SQL Injection, XSS, Hardcoded Secret...)
 // Hoặc bấm 'Tải thư mục' / 'Quét từ Git' để rà soát toàn bộ dự án!"></textarea>
-        <!-- Code Viewer hiển thị số dòng & bôi đỏ dòng lỗi -->
+        <!-- Code Viewer hiển thị số dòng & bôi đỏ dòng lỗi (fallback nếu không có Monaco) -->
         <div id="codeViewer" class="code-viewer-container" style="display: none;"></div>
+      </div>
+
+      <!-- VS Code-style Problems Panel -->
+      <div id="problemsPanel" class="problems-panel">
+        <div class="problems-panel-header">
+          <div class="problems-title-group">
+            <span class="problems-panel-icon">⚠️</span>
+            <span class="problems-panel-title">PROBLEMS</span>
+            <span id="problemsBadge" class="problems-badge">0</span>
+          </div>
+          <div class="problems-actions">
+            <button id="reScanCurrentBtn" class="btn-rescan-subtle" style="display: none;" title="Phát hiện code đã sửa, bấm để quét lại file này ngay">
+              ⚡ Quét lại file này
+            </button>
+          </div>
+        </div>
+        <div id="problemsList" class="problems-list">
+          <div class="problems-empty">Chưa có phát hiện bảo mật nào trong file này.</div>
+        </div>
       </div>
 
       <!-- Action Footer -->

@@ -35,18 +35,34 @@ function normalizeRecommendations(items) {
 
 function normalizeVulnerability(vuln) {
   if (!vuln || typeof vuln !== 'object') return null;
-  const line = Number.parseInt(vuln.line_number, 10);
+  const rawStart = Number.parseInt(vuln.start_line ?? vuln.line_number, 10);
+  const startLine = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : 1;
+  const rawEnd = Number.parseInt(vuln.end_line ?? vuln.start_line ?? vuln.line_number, 10);
+  const endLine = Number.isFinite(rawEnd) && rawEnd >= startLine ? rawEnd : startLine;
+
+  const rawStartCol = Number.parseInt(vuln.start_column, 10);
+  const startCol = Number.isFinite(rawStartCol) && rawStartCol > 0 ? rawStartCol : 1;
+  const rawEndCol = Number.parseInt(vuln.end_column, 10);
+  const endCol = Number.isFinite(rawEndCol) && rawEndCol >= 1 ? rawEndCol : null;
+
   return {
     ...vuln,
     type: normalizeText(vuln.type) || 'Security finding',
     severity: normalizeText(vuln.severity) || 'Trung bình',
     owasp_category: normalizeText(vuln.owasp_category),
-    line_number: Number.isFinite(line) && line > 0 ? line : 1,
+    cwe: normalizeText(vuln.cwe) || 'CWE-Other',
+    confidence: normalizeText(vuln.confidence) || 'Cao',
+    start_line: startLine,
+    end_line: endLine,
+    start_column: startCol,
+    end_column: endCol,
+    line_number: startLine,
     affected_lines: normalizeText(vuln.affected_lines),
     explanation: normalizeText(vuln.explanation),
     attack_scenario: normalizeText(vuln.attack_scenario),
     remediation: normalizeText(vuln.remediation),
-    fixed_code: normalizeText(vuln.fixed_code)
+    fixed_code: normalizeText(vuln.fixed_code),
+    impact: normalizeText(vuln.impact)
   };
 }
 
@@ -58,7 +74,8 @@ function dedupeVulnerabilities(vulns) {
     if (!vuln) continue;
     const key = [
       vuln.type.toLowerCase(),
-      vuln.line_number,
+      vuln.start_line,
+      vuln.end_line,
       vuln.affected_lines.toLowerCase().replace(/\s+/g, ' ').slice(0, 220)
     ].join('|');
     if (seen.has(key)) continue;
@@ -302,26 +319,26 @@ export class ScannerService {
   }
 
   generateSecurityPrompt(code, language = 'auto') {
-    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát toàn diện đoạn mã nguồn dưới đây dựa trên bộ tiêu chuẩn OWASP Top 10:
+    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát toàn diện đoạn mã nguồn dưới đây dựa trên bộ tiêu chuẩn OWASP Top 10:2025:
 
-DANH MỤC TRỌNG TÂM OWASP TOP 10 CẦN KIỂM TRA:
-1. A01:2021 - Broken Access Control: IDOR, Path/Directory Traversal, bypass quyền hạn, cấu hình CORS nguy hiểm.
-2. A02:2021 - Cryptographic Failures: Hardcoded Secret/API Key/Password trong code, dùng thuật toán băm/mã hóa yếu (MD5, SHA1, DES).
-3. A03:2021 - Injection: SQL Injection (nối chuỗi truy vấn), Command Injection (child_process, os.system, exec), Cross-Site Scripting (DOM XSS / Reflected XSS), NoSQL Injection, SSTI.
-4. A04:2021 - Insecure Design: Thiếu xác thực ranh giới tin cậy, luồng nghiệp vụ không kiểm tra dữ liệu đầu vào.
-5. A05:2021 - Security Misconfiguration: Lộ stack trace/thông tin lỗi chi tiết, bật chế độ debug trên production, thiếu cấu hình bảo vệ.
-6. A06:2021 - Vulnerable and Outdated Components: Sử dụng hàm/thư viện lỗi thời hoặc đã có cảnh báo bảo mật nghiêm trọng.
-7. A07:2021 - Identification and Authentication Failures: Session fixation, bypass xác thực, JWT không verify signature.
-8. A08:2021 - Software and Data Integrity Failures: Deserialization không an toàn (pickle, ObjectInputStream, eval).
-9. A09:2021 - Security Logging and Monitoring Failures: Ghi log chứa thông tin nhạy cảm (token, mật khẩu) hoặc log injection.
-10. A10:2021 - Server-Side Request Forgery (SSRF): Backend gửi HTTP request tới URL do người dùng cung cấp mà không lọc IP nội bộ / metadata.
+DANH MỤC TRỌNG TÂM OWASP TOP 10:2025 CẦN KIỂM TRA:
+1. A01:2025 - Broken Access Control: IDOR, Path/Directory Traversal, bypass quyền hạn, CORS nguy hiểm, lộ API nhạy cảm.
+2. A02:2025 - Cryptographic Failures: Hardcoded Secret/API Key/Password trong code, thuật toán mã hóa yếu (MD5, SHA1, DES), truyền dữ liệu không an toàn.
+3. A03:2025 - Injection: SQL Injection, Command Injection (child_process, os.system, exec), Cross-Site Scripting (DOM/Reflected XSS), NoSQL/SSTI Injection.
+4. A04:2025 - Insecure Design: Lỗ hổng kiến trúc, thiếu kiểm soát ranh giới tin cậy, luồng nghiệp vụ không an toàn.
+5. A05:2025 - Security Misconfiguration: Lộ thông tin lỗi/stack trace, cấu hình mặc định không an toàn, bật chế độ debug.
+6. A06:2025 - Vulnerable and Outdated Components: Phụ thuộc thư viện có lỗ hổng CVE đã công bố.
+7. A07:2025 - Identification and Authentication Failures: Bypass xác thực, lộ session, JWT thiếu kiểm tra chữ ký, mật khẩu yếu.
+8. A08:2025 - Software and Data Integrity Failures: Deserialization không an toàn (eval, pickle), update integrity thiếu kiểm tra.
+9. A09:2025 - Security Logging and Monitoring Failures: Lộ secret trong log, thiếu log sự kiện quan trọng, log injection.
+10. A10:2025 - Server-Side Request Forgery (SSRF): Backend gửi request tới endpoint người dùng cung cấp mà không validate IP/Domain.
 
 QUY TẮC RÀ SOÁT BẢO MẬT:
 - Chỉ báo lỗ hổng khi có bằng chứng rõ ràng trong mã nguồn; không suy diễn từ HTML/CSS tĩnh thuần túy.
 - SQL có placeholder (?, $1, :name, %s) và được truyền tham số riêng KHÔNG PHẢI SQL Injection.
 - Chỉ báo DOM XSS khi dữ liệu động không tin cậy đi vào innerHTML/outerHTML/insertAdjacentHTML/document.write mà không sanitize/escape.
 - Chỉ báo Hardcoded Secret khi có credential thực được gán literal; bỏ qua biến môi trường (process.env, os.getenv), placeholder ("your-api-key"), example/mock/test value.
-- line_number phải đúng theo chỉ số [L...].
+- start_line và end_line phải đúng theo chỉ số [L...] bao trọn toàn bộ phạm vi dòng code bị ảnh hưởng.
 
 Trả về JSON duy nhất:
 {
@@ -330,7 +347,11 @@ Trả về JSON duy nhất:
   "vulnerabilities": [{
     "type": "Tên lỗ hổng (ví dụ: SQL Injection, Hardcoded Secret, XSS...)",
     "severity": "Cao|Trung bình|Thấp|Nghiêm trọng",
-    "owasp_category": "Mã OWASP (ví dụ: A03:2021 - Injection, A02:2021 - Cryptographic Failures)",
+    "owasp_category": "Mã OWASP Top 10:2025 (ví dụ: A03:2025 - Injection, A01:2025 - Broken Access Control)",
+    "cwe": "Mã CWE (ví dụ: CWE-89, CWE-79, CWE-798...)",
+    "confidence": "Cao|Trung bình|Thấp",
+    "start_line": 1,
+    "end_line": 1,
     "line_number": 1,
     "affected_lines": "Dòng code chứa nguy cơ",
     "explanation": "Giải thích chi tiết nguyên nhân và rủi ro",
@@ -349,14 +370,14 @@ ${code.split('\n').map((line, i) => `[L${i + 1}] ${line}`).join('\n')}
   }
 
   generateChunkSecurityPrompt(chunkLines, startLineNumber, language = 'auto') {
-    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát đoạn mã từ dòng [L${startLineNumber}] đến [L${startLineNumber + chunkLines.length - 1}] theo chuẩn OWASP Top 10 (Injection, Broken Access Control, Secrets, XSS, SSRF, v.v.):
+    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát đoạn mã từ dòng [L${startLineNumber}] đến [L${startLineNumber + chunkLines.length - 1}] theo chuẩn OWASP Top 10:2025 (Injection, Broken Access Control, Secrets, XSS, SSRF, v.v.):
 
 QUY TẮC RÀ SOÁT:
 - Chỉ báo lỗ hổng khi có bằng chứng rõ ràng trong đoạn mã.
 - Không báo XSS cho HTML/CSS tĩnh.
 - SQL dùng placeholder và truyền tham số tách biệt là an toàn.
 - Không báo secret cho placeholder/example/mock/test hoặc biến môi trường.
-- line_number phải giữ đúng chỉ số dòng [L...] của toàn file.
+- start_line và end_line phải giữ đúng chỉ số dòng [L...] của toàn file.
 
 Trả về JSON duy nhất:
 {
@@ -365,7 +386,11 @@ Trả về JSON duy nhất:
   "vulnerabilities": [{
     "type": "Tên lỗ hổng",
     "severity": "Cao|Trung bình|Thấp|Nghiêm trọng",
-    "owasp_category": "Mã OWASP (ví dụ: A03:2021 - Injection, A01:2021 - Broken Access Control)",
+    "owasp_category": "Mã OWASP Top 10:2025 (ví dụ: A03:2025 - Injection, A01:2025 - Broken Access Control)",
+    "cwe": "Mã CWE (ví dụ: CWE-89, CWE-79)",
+    "confidence": "Cao|Trung bình|Thấp",
+    "start_line": ${startLineNumber},
+    "end_line": ${startLineNumber},
     "line_number": ${startLineNumber},
     "affected_lines": "Dòng code chứa nguy cơ",
     "explanation": "Giải thích nguyên nhân và rủi ro",
@@ -593,7 +618,7 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       && (
         /f["'].*\{.+\}/i.test(line)
         || /\$\{.+\}/.test(line)
-        || /\bselect\b.*\+/.test(line)
+        || /\bselect\b.*\+/i.test(line)
         || /\+\s*.*\b(select|where|from)\b/i.test(line)
       )
     );
@@ -602,7 +627,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       vulnerabilities.push({
         type: 'SQL Injection',
         severity: 'Cao',
-        owasp_category: 'A03:2021-Injection',
+        owasp_category: 'A03:2025 - Injection',
+        cwe: 'CWE-89',
+        confidence: 'Cao',
+        start_line: sqlLineIdx + 1,
+        end_line: sqlLineIdx + 1,
+        start_column: 1,
+        end_column: lines[sqlLineIdx].length + 1,
         line_number: sqlLineIdx + 1,
         affected_lines: lines[sqlLineIdx].trim(),
         explanation: 'Truy vấn SQL ghép trực tiếp dữ liệu động vào câu lệnh thay vì truyền tham số riêng.',
@@ -623,7 +654,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       vulnerabilities.push({
         type: 'Cross-Site Scripting (DOM XSS)',
         severity: 'Cao',
-        owasp_category: 'A03:2021-Injection',
+        owasp_category: 'A03:2025 - Injection',
+        cwe: 'CWE-79',
+        confidence: 'Cao',
+        start_line: xssLineIdx + 1,
+        end_line: xssLineIdx + 1,
+        start_column: 1,
+        end_column: lines[xssLineIdx].length + 1,
         line_number: xssLineIdx + 1,
         affected_lines: lines[xssLineIdx].trim(),
         explanation: 'Dữ liệu động có thể đi vào HTML sink mà không được escape/sanitize.',
@@ -647,7 +684,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       vulnerabilities.push({
         type: 'Hardcoded Secrets & Sensitive Credentials',
         severity: 'Nghiêm trọng',
-        owasp_category: 'A07:2021-Identification & Auth Failures',
+        owasp_category: 'A07:2025 - Authentication Failures',
+        cwe: 'CWE-798',
+        confidence: 'Cao',
+        start_line: secretLineIdx + 1,
+        end_line: secretLineIdx + 1,
+        start_column: 1,
+        end_column: lines[secretLineIdx].length + 1,
         line_number: secretLineIdx + 1,
         affected_lines: lines[secretLineIdx].trim(),
         explanation: 'Credential có vẻ được ghi trực tiếp trong mã nguồn.',
@@ -665,7 +708,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       vulnerabilities.push({
         type: 'OS Command Injection',
         severity: 'Nghiêm trọng',
-        owasp_category: 'A03:2021-Injection',
+        owasp_category: 'A03:2025 - Injection',
+        cwe: 'CWE-78',
+        confidence: 'Cao',
+        start_line: commandLineIdx + 1,
+        end_line: commandLineIdx + 1,
+        start_column: 1,
+        end_column: lines[commandLineIdx].length + 1,
         line_number: commandLineIdx + 1,
         affected_lines: lines[commandLineIdx].trim(),
         explanation: 'Dữ liệu động được ghép vào lệnh hệ điều hành.',
@@ -685,7 +734,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       vulnerabilities.push({
         type: 'Path Traversal / Arbitrary File Read',
         severity: 'Cao',
-        owasp_category: 'A01:2021-Broken Access Control',
+        owasp_category: 'A01:2025 - Broken Access Control',
+        cwe: 'CWE-22',
+        confidence: 'Cao',
+        start_line: pathLineIdx + 1,
+        end_line: pathLineIdx + 1,
+        start_column: 1,
+        end_column: lines[pathLineIdx].length + 1,
         line_number: pathLineIdx + 1,
         affected_lines: lines[pathLineIdx].trim(),
         explanation: 'Đường dẫn file có thể phụ thuộc vào dữ liệu bên ngoài mà chưa thấy bước chuẩn hóa/giới hạn thư mục.',
