@@ -146,19 +146,11 @@
         </div>
       </div>
 
-      <!-- Quick Samples Selector -->
-      <div class="sample-bar">
-        <span class="sample-label">Thử nhanh mẫu:</span>
-        <div id="sampleChips" class="sample-chips">
-          <span class="chip-loading">Đang tải mẫu...</span>
-        </div>
-      </div>
-
       <!-- Code Editor Area (Monaco Engine with Fallback) -->
       <div class="editor-wrapper">
         <div id="monacoEditorContainer" class="monaco-editor-container"></div>
         <textarea id="codeEditor" spellcheck="false" style="display: none;" placeholder="// Dán đoạn mã nguồn bạn muốn kiểm tra bảo mật vào đây...
-// Hoặc bấm các mẫu có sẵn ở thanh phía trên (SQL Injection, XSS, Hardcoded Secret...)
+// Bấm 'Phân tích' để rà soát tự động theo tiêu chuẩn OWASP Top 10
 // Hoặc bấm 'Tải thư mục' / 'Quét từ Git' để rà soát toàn bộ dự án!"></textarea>
         <!-- Code Viewer hiển thị số dòng & bôi đỏ dòng lỗi (fallback nếu không có Monaco) -->
         <div id="codeViewer" class="code-viewer-container" style="display: none;"></div>

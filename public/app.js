@@ -545,20 +545,22 @@ async function fetchServerStatus() {
   }
 }
 
-// Lấy danh sách mẫu code
+// Lấy danh sách mẫu code (nếu có thanh mẫu)
 async function fetchSamples() {
+  if (!sampleChips) return;
   try {
     const res = await fetch('/api/samples');
     const data = await res.json();
     samplesData = data.samples || [];
     renderSampleChips();
   } catch (err) {
-    sampleChips.innerHTML = '<span style="color:#f85149;font-size:0.8rem;">Lỗi tải mẫu</span>';
+    if (sampleChips) sampleChips.innerHTML = '<span style="color:#f85149;font-size:0.8rem;">Lỗi tải mẫu</span>';
   }
 }
 
-// Render chip các mẫu thử
+// Render chip các mẫu thử (nếu có thanh mẫu)
 function renderSampleChips() {
+  if (!sampleChips) return;
   sampleChips.innerHTML = '';
   samplesData.forEach(sample => {
     const chip = document.createElement('button');
