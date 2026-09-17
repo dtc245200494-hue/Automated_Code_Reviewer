@@ -302,34 +302,46 @@ export class ScannerService {
   }
 
   generateSecurityPrompt(code, language = 'auto') {
-    return `Bạn là chuyên gia AppSec. Hãy rà soát đoạn mã sau theo OWASP Top 10.
+    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát toàn diện đoạn mã nguồn dưới đây dựa trên bộ tiêu chuẩn OWASP Top 10:
 
-QUY TẮC:
-- Chỉ báo lỗ hổng khi có bằng chứng rõ ràng; không suy diễn từ HTML/CSS tĩnh.
-- SQL có placeholder (?, $1, :name, %s) và được truyền tham số riêng không phải SQL Injection.
-- Chỉ báo DOM XSS khi dữ liệu động không tin cậy đi vào innerHTML/outerHTML/insertAdjacentHTML/document.write hoặc template HTML thực thi mà không sanitize/escape.
-- Chỉ báo hardcoded secret khi có credential thực được gán literal; bỏ qua biến môi trường, placeholder, example/mock/test value.
+DANH MỤC TRỌNG TÂM OWASP TOP 10 CẦN KIỂM TRA:
+1. A01:2021 - Broken Access Control: IDOR, Path/Directory Traversal, bypass quyền hạn, cấu hình CORS nguy hiểm.
+2. A02:2021 - Cryptographic Failures: Hardcoded Secret/API Key/Password trong code, dùng thuật toán băm/mã hóa yếu (MD5, SHA1, DES).
+3. A03:2021 - Injection: SQL Injection (nối chuỗi truy vấn), Command Injection (child_process, os.system, exec), Cross-Site Scripting (DOM XSS / Reflected XSS), NoSQL Injection, SSTI.
+4. A04:2021 - Insecure Design: Thiếu xác thực ranh giới tin cậy, luồng nghiệp vụ không kiểm tra dữ liệu đầu vào.
+5. A05:2021 - Security Misconfiguration: Lộ stack trace/thông tin lỗi chi tiết, bật chế độ debug trên production, thiếu cấu hình bảo vệ.
+6. A06:2021 - Vulnerable and Outdated Components: Sử dụng hàm/thư viện lỗi thời hoặc đã có cảnh báo bảo mật nghiêm trọng.
+7. A07:2021 - Identification and Authentication Failures: Session fixation, bypass xác thực, JWT không verify signature.
+8. A08:2021 - Software and Data Integrity Failures: Deserialization không an toàn (pickle, ObjectInputStream, eval).
+9. A09:2021 - Security Logging and Monitoring Failures: Ghi log chứa thông tin nhạy cảm (token, mật khẩu) hoặc log injection.
+10. A10:2021 - Server-Side Request Forgery (SSRF): Backend gửi HTTP request tới URL do người dùng cung cấp mà không lọc IP nội bộ / metadata.
+
+QUY TẮC RÀ SOÁT BẢO MẬT:
+- Chỉ báo lỗ hổng khi có bằng chứng rõ ràng trong mã nguồn; không suy diễn từ HTML/CSS tĩnh thuần túy.
+- SQL có placeholder (?, $1, :name, %s) và được truyền tham số riêng KHÔNG PHẢI SQL Injection.
+- Chỉ báo DOM XSS khi dữ liệu động không tin cậy đi vào innerHTML/outerHTML/insertAdjacentHTML/document.write mà không sanitize/escape.
+- Chỉ báo Hardcoded Secret khi có credential thực được gán literal; bỏ qua biến môi trường (process.env, os.getenv), placeholder ("your-api-key"), example/mock/test value.
 - line_number phải đúng theo chỉ số [L...].
 
 Trả về JSON duy nhất:
 {
   "is_safe": boolean,
-  "overall_summary": "Tóm tắt tiếng Việt",
+  "overall_summary": "Tóm tắt đánh giá bảo mật tổng quan bằng tiếng Việt",
   "vulnerabilities": [{
-    "type": "Tên lỗ hổng",
+    "type": "Tên lỗ hổng (ví dụ: SQL Injection, Hardcoded Secret, XSS...)",
     "severity": "Cao|Trung bình|Thấp|Nghiêm trọng",
-    "owasp_category": "OWASP",
+    "owasp_category": "Mã OWASP (ví dụ: A03:2021 - Injection, A02:2021 - Cryptographic Failures)",
     "line_number": 1,
-    "affected_lines": "Dòng code",
-    "explanation": "Giải thích",
-    "attack_scenario": "Kịch bản khai thác",
-    "remediation": "Cách sửa",
-    "fixed_code": "Code sửa"
+    "affected_lines": "Dòng code chứa nguy cơ",
+    "explanation": "Giải thích chi tiết nguyên nhân và rủi ro",
+    "attack_scenario": "Kịch bản tin tặc có thể khai thác",
+    "remediation": "Cách khắc phục triệt để",
+    "fixed_code": "Đoạn code đã sửa an toàn"
   }],
-  "recommendations": []
+  "recommendations": ["Khuyến nghị bảo mật bổ sung"]
 }
 
-Nếu không phát hiện lỗ hổng: "is_safe": true và "vulnerabilities": [].
+Nếu mã nguồn an toàn: "is_safe": true và "vulnerabilities": [].
 
 \`\`\`${language}
 ${code.split('\n').map((line, i) => `[L${i + 1}] ${line}`).join('\n')}
@@ -337,29 +349,29 @@ ${code.split('\n').map((line, i) => `[L${i + 1}] ${line}`).join('\n')}
   }
 
   generateChunkSecurityPrompt(chunkLines, startLineNumber, language = 'auto') {
-    return `Bạn là chuyên gia AppSec. Hãy rà soát đoạn mã từ [L${startLineNumber}] đến [L${startLineNumber + chunkLines.length - 1}].
+    return `Bạn là chuyên gia kiểm thử bảo mật mã nguồn (AppSec Expert). Hãy rà soát đoạn mã từ dòng [L${startLineNumber}] đến [L${startLineNumber + chunkLines.length - 1}] theo chuẩn OWASP Top 10 (Injection, Broken Access Control, Secrets, XSS, SSRF, v.v.):
 
-QUY TẮC:
-- Chỉ báo lỗ hổng khi có bằng chứng rõ ràng.
+QUY TẮC RÀ SOÁT:
+- Chỉ báo lỗ hổng khi có bằng chứng rõ ràng trong đoạn mã.
 - Không báo XSS cho HTML/CSS tĩnh.
 - SQL dùng placeholder và truyền tham số tách biệt là an toàn.
-- Không báo secret cho placeholder/example/mock/test hoặc process.env.
-- line_number phải giữ nguyên số [L...] toàn file.
+- Không báo secret cho placeholder/example/mock/test hoặc biến môi trường.
+- line_number phải giữ đúng chỉ số dòng [L...] của toàn file.
 
 Trả về JSON duy nhất:
 {
   "is_safe": boolean,
-  "overall_summary": "Tóm tắt",
+  "overall_summary": "Tóm tắt đánh giá bằng tiếng Việt",
   "vulnerabilities": [{
     "type": "Tên lỗ hổng",
     "severity": "Cao|Trung bình|Thấp|Nghiêm trọng",
-    "owasp_category": "OWASP",
+    "owasp_category": "Mã OWASP (ví dụ: A03:2021 - Injection, A01:2021 - Broken Access Control)",
     "line_number": ${startLineNumber},
-    "affected_lines": "Dòng code",
-    "explanation": "Giải thích",
-    "attack_scenario": "Kịch bản",
-    "remediation": "Cách sửa",
-    "fixed_code": "Code sửa"
+    "affected_lines": "Dòng code chứa nguy cơ",
+    "explanation": "Giải thích nguyên nhân và rủi ro",
+    "attack_scenario": "Kịch bản khai thác",
+    "remediation": "Cách sửa triệt để",
+    "fixed_code": "Đoạn code đã sửa an toàn"
   }],
   "recommendations": []
 }
