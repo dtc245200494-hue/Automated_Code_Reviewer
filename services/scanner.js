@@ -88,12 +88,15 @@ async function mapWithConcurrency(items, concurrency, worker) {
   return results;
 }
 
+// Chỉ giữ để nhận diện cấu hình LocalStorage cũ ở server.js.
+// Không còn dùng key này làm key mặc định của server.
 export const DEFAULT_OPENCODE_API_KEY = 'sk-PtTVvzUMtFeHt04GwX5DNH9la9Jv6j7Es6KjdadWkqTfRrA9Aho3SMHfyitBWR5O';
 
 export class ScannerService {
   constructor() {
     const rawProvider = (process.env.AI_PROVIDER || '').trim().toLowerCase();
     const envKey = process.env.OPENAI_API_KEY || '';
+    const cerebrasEnvKey = process.env.CEREBRAS_API_KEY || '';
     const groqEnvKey = process.env.GROQ_API_KEY || '';
     const opencodeEnvKey = process.env.OPENCODE_API_KEY || '';
     const endpoint = (process.env.OPENAI_API_ENDPOINT || '').trim();
@@ -101,10 +104,13 @@ export class ScannerService {
     this.isAzure = Boolean(process.env.AZURE_API_VERSION && process.env.AZURE_DEPLOYMENT);
     this.isGithubModels = process.env.USE_GITHUB_MODELS === 'true';
 
-    // Xác định provider rõ ràng: Ưu tiên AI_PROVIDER nếu có
+    // Xác định provider rõ ràng: ưu tiên AI_PROVIDER nếu có.
+    // Nếu không cấu hình provider nhưng có CEREBRAS_API_KEY thì Cerebras là mặc định.
     let chosenProvider = '';
     if (rawProvider) {
       chosenProvider = rawProvider;
+    } else if (cerebrasEnvKey || endpoint.includes('cerebras.ai')) {
+      chosenProvider = 'cerebras';
     } else if (opencodeEnvKey || endpoint.includes('opencode.ai')) {
       chosenProvider = 'opencode';
     } else if (groqEnvKey || envKey.startsWith('gsk_')) {
@@ -116,16 +122,25 @@ export class ScannerService {
     } else if (envKey) {
       chosenProvider = 'openai';
     } else if (process.env.NO_DEFAULT_KEY !== 'true') {
-      // Mặc định nạp key OpenCode có sẵn nếu chưa đặt biến môi trường
-      chosenProvider = 'opencode';
+      // Không nhúng secret mặc định vào source. Chờ CEREBRAS_API_KEY trong .env.
+      chosenProvider = 'cerebras';
     }
 
+    this.isCerebras = chosenProvider === 'cerebras';
     this.isOpenCode = chosenProvider === 'opencode';
     this.isGroq = chosenProvider === 'groq';
     this.isOpenAI = chosenProvider === 'openai';
 
-    if (this.isOpenCode) {
-      this.apiKey = opencodeEnvKey || envKey || (process.env.NO_DEFAULT_KEY === 'true' ? '' : DEFAULT_OPENCODE_API_KEY);
+    if (this.isCerebras) {
+      this.apiKey = cerebrasEnvKey || envKey;
+      this.model = process.env.MODEL || 'gpt-oss-120b';
+      this.provider = 'Cerebras';
+      this.client = this.apiKey ? new OpenAI({
+        apiKey: this.apiKey,
+        baseURL: endpoint || 'https://api.cerebras.ai/v1',
+      }) : null;
+    } else if (this.isOpenCode) {
+      this.apiKey = opencodeEnvKey || envKey;
       this.model = process.env.MODEL || 'deepseek-v4-flash-free';
       this.provider = 'OpenCode.ai';
       this.client = this.apiKey ? new OpenAI({
@@ -168,8 +183,8 @@ export class ScannerService {
       }) : null;
     } else {
       this.apiKey = '';
-      this.model = 'deepseek-v4-flash-free';
-      this.provider = 'OpenCode.ai';
+      this.model = 'gpt-oss-120b';
+      this.provider = 'Cerebras';
       this.client = null;
     }
   }
@@ -186,18 +201,26 @@ export class ScannerService {
   }
 
   getDefaultModel(provider, firstKey = '') {
+    if (provider === 'cerebras') return 'gpt-oss-120b';
     if (provider === 'gemini' || firstKey.startsWith('AIzaSy')) return 'gemini-1.5-flash';
     if (provider === 'deepseek') return 'deepseek-chat';
     if (provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
     if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'llama-3.3-70b-versatile';
     if (provider === 'opencode') return 'deepseek-v4-flash-free';
     if (provider === 'openai') return 'gpt-4o-mini';
-    return 'deepseek-v4-flash-free';
+    return 'gpt-oss-120b';
   }
 
   createClient(apiKey, provider, baseURL) {
     const key = apiKey ? apiKey.trim() : '';
     if (!key) return null;
+
+    if (provider === 'cerebras') {
+      return new OpenAI({
+        apiKey: key,
+        baseURL: baseURL || 'https://api.cerebras.ai/v1',
+      });
+    }
 
     if (provider === 'groq' || key.startsWith('gsk_')) {
       return new OpenAI({
@@ -240,7 +263,7 @@ export class ScannerService {
     });
   }
 
-  async testApiKey(apiKey, provider = 'groq', model = '') {
+  async testApiKey(apiKey, provider = 'cerebras', model = '') {
     const rawKeys = this.parseApiKeys(apiKey);
     if (rawKeys.length === 0) {
       throw new Error('API Key không được để trống.');
@@ -256,17 +279,19 @@ export class ScannerService {
       max_tokens: 5
     });
 
-    const providerName = provider === 'gemini' || firstKey.startsWith('AIzaSy')
-      ? 'Google Gemini AI'
-      : provider === 'deepseek'
-        ? 'DeepSeek AI'
-        : provider === 'openrouter'
-          ? 'OpenRouter AI'
-          : provider === 'opencode'
-            ? 'OpenCode.ai'
-            : provider === 'openai'
-              ? 'OpenAI'
-              : 'Groq Cloud AI';
+    const providerName = provider === 'cerebras'
+      ? 'Cerebras'
+      : provider === 'gemini' || firstKey.startsWith('AIzaSy')
+        ? 'Google Gemini AI'
+        : provider === 'deepseek'
+          ? 'DeepSeek AI'
+          : provider === 'openrouter'
+            ? 'OpenRouter AI'
+            : provider === 'opencode'
+              ? 'OpenCode.ai'
+              : provider === 'openai'
+                ? 'OpenAI'
+                : 'Groq Cloud AI';
 
     return {
       success: true,
@@ -406,9 +431,19 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
     }
 
     const customKeys = this.parseApiKeys(customConfig?.apiKey || '');
-    const provider = customConfig?.provider || (this.isGroq ? 'groq' : 'openai');
+    const provider = customConfig?.provider || (
+      this.isCerebras
+        ? 'cerebras'
+        : this.isGroq
+          ? 'groq'
+          : this.isOpenCode
+            ? 'opencode'
+            : 'openai'
+    );
     const firstKey = customKeys[0] || this.apiKey || '';
-    const activeModel = customConfig?.model || this.getDefaultModel(provider, firstKey) || this.model;
+    const activeModel = customConfig?.model
+      || (customConfig ? this.getDefaultModel(provider, firstKey) : this.model)
+      || this.getDefaultModel(provider, firstKey);
 
     let clientPool = [];
     if (customKeys.length > 0) {
