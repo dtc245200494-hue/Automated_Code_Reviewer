@@ -20,6 +20,7 @@ import {
   normalizeUniversalEndpoint,
   parseExtraHeaders
 } from './services/universal-ai.js';
+import { fetchOpenCodeModels } from './services/opencode-models.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ const PORT = process.env.WEB_PORT || 3000;
 const scannerService = new ScannerService();
 const githubService = new GitHubService();
 const publicDir = path.join(__dirname, 'public');
+let openCodeModelsCache = { expiresAt: 0, models: [] };
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -96,14 +98,17 @@ scannerService.createClient = (apiKey, provider, baseURL) => {
   return createBuiltInClient(apiKey, provider, baseURL);
 };
 
-// Chèn phần mở rộng Universal AI API vào giao diện mà không sửa app.js cũ.
+// Chèn các phần mở rộng Universal API + OpenCode model discovery vào giao diện.
 app.get(['/', '/index.html'], (req, res, next) => {
   try {
     const indexPath = path.join(publicDir, 'index.html');
     const html = fs.readFileSync(indexPath, 'utf8');
     const marker = '<script src="app.js"></script>';
     const enhanced = html.includes(marker)
-      ? html.replace(marker, `${marker}\n  <script src="custom-provider.js"></script>`)
+      ? html.replace(
+          marker,
+          `${marker}\n  <script src="custom-provider.js"></script>\n  <script src="opencode-models.js"></script>`
+        )
       : html;
     res.type('html').send(enhanced);
   } catch (err) {
@@ -123,6 +128,38 @@ app.get('/api/status', (req, res) => {
     model: scannerService.model,
     provider: scannerService.provider
   });
+});
+
+// API: Lấy danh sách model OpenCode và gắn sẵn protocol/endpoint tương ứng.
+app.get('/api/providers/opencode/models', async (req, res) => {
+  const now = Date.now();
+  if (openCodeModelsCache.models.length && openCodeModelsCache.expiresAt > now) {
+    return res.json({ success: true, cached: true, models: openCodeModelsCache.models });
+  }
+
+  try {
+    const models = await fetchOpenCodeModels();
+    openCodeModelsCache = {
+      models,
+      expiresAt: now + (5 * 60 * 1000)
+    };
+    return res.json({ success: true, cached: false, models });
+  } catch (err) {
+    console.error('Lỗi tải danh sách model OpenCode:', err.message);
+    if (openCodeModelsCache.models.length) {
+      return res.json({
+        success: true,
+        cached: true,
+        stale: true,
+        warning: err.message,
+        models: openCodeModelsCache.models
+      });
+    }
+    return res.status(502).json({
+      success: false,
+      error: err.message || 'Không thể tải danh sách model OpenCode.'
+    });
+  }
 });
 
 // API: Lấy danh sách mẫu code lỗ hổng
