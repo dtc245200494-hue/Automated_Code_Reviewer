@@ -2604,13 +2604,40 @@ function populateDrawerWithVuln(v, filePath) {
   const undoBtn = document.getElementById('btnUndoFix');
   if (undoBtn) undoBtn.style.display = (editorCodeSnapshotBeforeFix ? 'inline-flex' : 'none');
 
-  // References Tab
+  // References Tab: Dynamic CWE & OWASP Top 10:2025 Links
   const cweNum = (v.cwe || '').replace(/\D/g, '');
   const cweLink = document.getElementById('drawerCweLink');
   const cweTitle = document.getElementById('drawerCweLinkTitle');
   if (cweLink && cweNum) {
     cweLink.href = `https://cwe.mitre.org/data/definitions/${cweNum}.html`;
     if (cweTitle) cweTitle.textContent = `MITRE CWE-${cweNum} Specification`;
+  }
+
+  const OWASP_2025_DOCS = {
+    'A01': 'https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/',
+    'A02': 'https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/',
+    'A03': 'https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/',
+    'A04': 'https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/',
+    'A05': 'https://top10.owasp.org/2025/A05_2025-Injection/',
+    'A06': 'https://top10.owasp.org/2025/A06_2025-Insecure_Design/',
+    'A07': 'https://top10.owasp.org/2025/A07_2025-Authentication_Failures/',
+    'A08': 'https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/',
+    'A09': 'https://top10.owasp.org/2025/A09_2025-Security_Logging_and_Alerting_Failures/',
+    'A10': 'https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/'
+  };
+
+  const owaspLink = document.getElementById('drawerOwaspLink');
+  const owaspTitle = document.getElementById('drawerOwaspLinkTitle');
+  const catMatch = (v.owasp_category || '').match(/A(0[1-9]|10)/i);
+  if (owaspLink) {
+    if (catMatch) {
+      const code = catMatch[0].toUpperCase();
+      owaspLink.href = OWASP_2025_DOCS[code] || 'https://top10.owasp.org/2025/';
+      if (owaspTitle) owaspTitle.textContent = `OWASP Top 10:2025 - ${code} (${v.owasp_category || 'Official Doc'})`;
+    } else {
+      owaspLink.href = 'https://top10.owasp.org/2025/';
+      if (owaspTitle) owaspTitle.textContent = 'OWASP Top 10:2025 Standard (Official)';
+    }
   }
 }
 

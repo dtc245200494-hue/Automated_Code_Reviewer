@@ -205,6 +205,31 @@
 
       renderFileTree();
       switchViewTab('summary');
+
+      // Tự động kết nối và cập nhật giao diện IDE mới (Findings + Monaco + Drawer)
+      if (typeof updateFindingsUI === 'function') {
+        updateFindingsUI();
+      }
+
+      if (totalVulns > 0) {
+        const firstVulnIdx = uploadedFiles.findIndex(f => f.result?.vulnerabilities?.length > 0);
+        if (firstVulnIdx >= 0) {
+          selectUploadedFile(firstVulnIdx);
+        }
+        if (typeof switchSidebarView === 'function') {
+          switchSidebarView('findings');
+        }
+        if (typeof selectVulnerability === 'function') {
+          selectVulnerability(0);
+        }
+      } else {
+        if (uploadedFiles.length > 0) {
+          selectUploadedFile(0);
+        }
+        if (typeof switchSidebarView === 'function') {
+          switchSidebarView('explorer');
+        }
+      }
     } catch (error) {
       console.error(error);
       renderSystemError({
