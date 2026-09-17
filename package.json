@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --check server.js && node --check public/custom-provider.js && node --test test/*.test.js"
+    "test": "node --check server.js && node --check public/custom-provider.js && node --check services/universal-ai.js && node --test test/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
