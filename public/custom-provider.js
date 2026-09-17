@@ -44,7 +44,7 @@
   };
 
   const knownDefaultModels = new Set([
-    'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'gemini-1.5-flash', 'gemini-1.5-pro',
+    'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro',
     'deepseek-chat', 'deepseek-reasoner', 'meta-llama/llama-3.3-70b-instruct:free',
     'anthropic/claude-3.5-sonnet', 'gpt-4o-mini', 'gpt-4o'
   ]);
