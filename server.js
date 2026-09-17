@@ -31,10 +31,56 @@ const app = express();
 const PORT = process.env.WEB_PORT || 3000;
 const scannerService = new ScannerService();
 const githubService = new GitHubService();
+const publicDir = path.join(__dirname, 'public');
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+function normalizeCustomEndpoint(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) {
+    throw new Error('Custom API cần Endpoint/Base URL, ví dụ https://api.example.com/v1.');
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('Endpoint Custom API không phải URL hợp lệ.');
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error('Không đặt username/password trực tiếp trong URL Custom API.');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+  const isSecureRemote = parsed.protocol === 'https:';
+  const isLocalHttp = parsed.protocol === 'http:' && isLocalhost;
+
+  if (!isSecureRemote && !isLocalHttp) {
+    throw new Error('Custom API từ xa phải dùng HTTPS. HTTP chỉ được phép với localhost/127.0.0.1.');
+  }
+
+  return parsed.toString().replace(/\/+$/, '');
+}
+
+// Chèn phần mở rộng Custom API vào giao diện mà không sửa app.js cũ.
+app.get(['/', '/index.html'], (req, res, next) => {
+  try {
+    const indexPath = path.join(publicDir, 'index.html');
+    const html = fs.readFileSync(indexPath, 'utf8');
+    const marker = '<script src="app.js"></script>';
+    const enhanced = html.includes(marker)
+      ? html.replace(marker, `${marker}\n  <script src="custom-provider.js"></script>`)
+      : html;
+    res.type('html').send(enhanced);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.use(express.static(publicDir));
 
 // API: Trạng thái & cấu hình hệ thống
 app.get('/api/status', (req, res) => {
@@ -81,7 +127,7 @@ app.post('/api/github/fetch-repo', async (req, res) => {
 
 // API: Kiểm tra API Key từ client
 app.post('/api/config/test-key', async (req, res) => {
-  const { apiKey, provider, model } = req.body;
+  const { apiKey, provider, model, baseURL } = req.body;
 
   if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
     return res.status(400).json({
@@ -91,6 +137,33 @@ app.post('/api/config/test-key', async (req, res) => {
   }
 
   try {
+    if (provider === 'custom') {
+      const customModel = typeof model === 'string' ? model.trim() : '';
+      if (!customModel) {
+        throw new Error('Custom API cần tên Model.');
+      }
+
+      const endpoint = normalizeCustomEndpoint(baseURL);
+      const keys = scannerService.parseApiKeys(apiKey);
+      if (keys.length === 0) {
+        throw new Error('API Key không được để trống.');
+      }
+
+      const client = scannerService.createClient(keys[0], 'custom', endpoint);
+      await client.chat.completions.create({
+        model: customModel,
+        messages: [{ role: 'user', content: 'Reply OK' }],
+        max_tokens: 5
+      });
+
+      return res.json({
+        success: true,
+        message: `Kết nối Custom API thành công! Đã nhận diện ${keys.length} API Key để chạy đa luồng.`,
+        provider: 'Custom API (OpenAI-compatible)',
+        model: customModel
+      });
+    }
+
     const testResult = await scannerService.testApiKey(apiKey, provider, model);
     return res.json({
       success: true,
@@ -118,7 +191,20 @@ app.post('/api/scan', async (req, res) => {
   }
 
   try {
-    const customConfig = (apiKey && typeof apiKey === 'string' && apiKey.trim()) ? { apiKey, provider, model, baseURL } : null;
+    let normalizedBaseURL = baseURL;
+    if (provider === 'custom') {
+      if (!model || typeof model !== 'string' || !model.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Custom API cần tên Model.'
+        });
+      }
+      normalizedBaseURL = normalizeCustomEndpoint(baseURL);
+    }
+
+    const customConfig = (apiKey && typeof apiKey === 'string' && apiKey.trim())
+      ? { apiKey, provider, model, baseURL: normalizedBaseURL }
+      : null;
     const result = await scannerService.scanCode(code, language || 'auto', customConfig);
     return res.json({
       success: true,
