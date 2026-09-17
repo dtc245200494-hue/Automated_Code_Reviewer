@@ -2,12 +2,12 @@
   "name": "ai-security-web",
   "version": "2.0.0",
   "description": "Web App giao diện trực quan cho AI Security Bot - Quét lỗ hổng bảo mật trực tiếp",
-  "main": "server.js",
+  "main": "server-assisted.js",
   "type": "module",
   "scripts": {
-    "start": "node --no-deprecation server.js",
-    "dev": "node --no-deprecation --watch server.js",
-    "test": "node --check server.js && node --check public/app.js && node --check public/custom-provider.js && node --check public/opencode-models.js && node --check services/universal-ai.js && node --check services/opencode-models.js && node --test test/*.test.js"
+    "start": "node --no-deprecation server-assisted.js",
+    "dev": "node --no-deprecation --watch server-assisted.js",
+    "test": "node --check server.js && node --check server-assisted.js && node --check public/app.js && node --check public/custom-provider.js && node --check public/opencode-models.js && node --check services/gemini-assistant.js && node --check services/universal-ai.js && node --check services/opencode-models.js && node --test test/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
