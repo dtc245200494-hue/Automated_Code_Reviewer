@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Security Code Reviewer - Quét Lỗ Hổng Bảo Mật</title>
+  <title>AI Security Code Reviewer - AppSec Studio IDE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,7 +13,7 @@
 <body>
   <div class="glow-bg"></div>
 
-  <!-- Header -->
+  <!-- Top Navbar -->
   <header class="navbar">
     <div class="brand">
       <div class="brand-icon">
@@ -23,7 +23,7 @@
         </svg>
       </div>
       <div>
-        <h1 class="brand-title">AI Security Bot <span class="brand-badge">Web Scanner</span></h1>
+        <h1 class="brand-title">AI Security Studio <span class="brand-badge">AppSec IDE</span></h1>
         <p class="brand-subtitle">Rà soát lỗ hổng mã nguồn tự động theo tiêu chuẩn OWASP Top 10</p>
       </div>
     </div>
@@ -33,7 +33,10 @@
         <span class="status-dot"></span>
         <span class="status-text">Đang kiểm tra...</span>
       </div>
-      <button id="openApiKeyModalBtn" class="btn-github btn-apikey-nav" title="Cấu hình API Key (Groq AI / OpenAI)">
+      <button id="openCommandPaletteBtn" class="btn-github btn-palette-nav" title="Mở Command Palette (Ctrl+Shift+P / F1)">
+        <span>⌨️</span> <span class="palette-btn-text">Commands</span> <kbd class="kbd-shortcut">Ctrl+Shift+P</kbd>
+      </button>
+      <button id="openApiKeyModalBtn" class="btn-github btn-apikey-nav" title="Cấu hình API Key (Groq AI / Google Gemini / OpenAI)">
         🔑 API Key
       </button>
       <button id="viewGuideBtn" class="btn-github" title="Hướng dẫn tích hợp GitHub CI/CD Bot tự động">
@@ -43,122 +46,402 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
         </svg>
-        GitHub Repo
+        GitHub
       </a>
     </div>
   </header>
 
-  <!-- Main Container -->
-  <main class="app-layout has-tree" id="mainLayout">
-    <!-- Left Sidebar: Folder Tree (Hiện khi tải thư mục hoặc nhiều file) -->
-    <aside id="folderSidebar" class="folder-sidebar" style="display: none;">
-      <div class="sidebar-header">
-        <div class="sidebar-title">
-          <span>📁 CẤU TRÚC THƯ MỤC</span>
-          <span id="fileCountBadge" class="badge-count">0 file</span>
-        </div>
-        <button id="scanAllFolderBtn" class="btn-scan-folder-primary" title="Quét toàn bộ tất cả file trong thư mục">
-          ⚡ Quét tất cả file
+  <!-- Full AppSec IDE Layout -->
+  <main class="ide-container" id="mainLayout">
+
+    <!-- 1. Activity Bar (Narrow 48px fixed bar) -->
+    <nav class="activity-bar" id="activityBar" aria-label="Activity Bar">
+      <div class="activity-top">
+        <button class="activity-btn active" id="tabBtnExplorer" data-view="explorer" title="Explorer - Quản lý File (Ctrl+Shift+E)">
+          <span class="activity-icon">📁</span>
+        </button>
+        <button class="activity-btn" id="tabBtnFindings" data-view="findings" title="Findings - Danh sách Lỗ hổng (Ctrl+Shift+F)">
+          <span class="activity-icon">🛡️</span>
+          <span id="findingsNavBadge" class="activity-badge" style="display: none;">0</span>
+        </button>
+        <button class="activity-btn" id="tabBtnScan" data-view="scan" title="Scan Engine - Cấu hình & Pipeline quét">
+          <span class="activity-icon">⚡</span>
+        </button>
+        <button class="activity-btn" id="tabBtnRisk" data-view="risk" title="Project Risk - Đánh giá Security Gate">
+          <span class="activity-icon">📊</span>
+        </button>
+        <button class="activity-btn" id="tabBtnSettings" data-view="settings" title="Settings - Cấu hình AI & Luật">
+          <span class="activity-icon">⚙️</span>
         </button>
       </div>
 
-      <!-- Quick Filter -->
-      <div class="sidebar-search">
-        <input type="text" id="fileSearchInput" placeholder="Tìm kiếm file..." />
+      <div class="activity-bottom">
+        <button class="activity-btn" id="togglePrimarySidebarBtn" title="Thu gọn / Mở rộng Sidebar (Ctrl+B)">
+          <span class="activity-icon">⬌</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- 2. Primary Sidebar (Collapsible Drawer ~300px) -->
+    <aside class="primary-sidebar" id="primarySidebar">
+      <!-- Sidebar Header -->
+      <div class="sidebar-header">
+        <div class="sidebar-title-group">
+          <span id="sidebarHeaderIcon" class="sidebar-icon">📁</span>
+          <span id="sidebarHeaderTitle" class="sidebar-title">EXPLORER</span>
+        </div>
+        <div class="sidebar-header-actions">
+          <button id="sidebarCollapseBtn" class="sidebar-icon-btn" title="Thu gọn sidebar (Ctrl+B)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <!-- File List Grouped Tree -->
-      <div id="fileTreeContainer" class="file-tree-container"></div>
+      <!-- View 1: Explorer Panel -->
+      <div class="sidebar-view-pane active" id="viewExplorer">
+        <div class="explorer-toolbar">
+          <div class="explorer-meta">
+            <span class="explorer-meta-label">PROJECT FILES</span>
+            <span id="fileCountBadge" class="badge-count">0 file</span>
+          </div>
+          <div class="explorer-quick-actions">
+            <label class="btn-explorer-action" title="Tải file từ máy tính">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+              + File
+              <input type="file" id="fileInput" multiple style="display: none;">
+            </label>
+
+            <label class="btn-explorer-action" title="Tải cả thư mục">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              + Folder
+              <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+            </label>
+
+            <button id="openGitModalBtn" class="btn-explorer-action" title="Quét từ GitHub">
+              Git
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-search">
+          <input type="text" id="fileSearchInput" placeholder="Tìm kiếm file theo tên..." />
+        </div>
+
+        <!-- File tree list -->
+        <div id="fileTreeContainer" class="file-tree-container">
+          <div class="sidebar-empty-hint">
+            Chưa có file nào được mở. Hãy tải file, thư mục hoặc dán mã nguồn vào editor.
+          </div>
+        </div>
+
+        <div class="sidebar-footer-action">
+          <button id="scanAllFolderBtn" class="btn-scan-folder-primary" title="Quét toàn bộ tất cả file trong dự án">
+            ⚡ Quét tất cả file
+          </button>
+        </div>
+      </div>
+
+      <!-- View 2: Findings Panel -->
+      <div class="sidebar-view-pane" id="viewFindings">
+        <!-- Severity Counters Strip -->
+        <div class="findings-stat-strip">
+          <div class="stat-pill crit" id="statPillCrit" title="Lỗ hổng Nghiêm trọng (Critical)">
+            <span class="stat-dot dot-crit"></span>
+            <span class="stat-count" id="countCrit">0</span>
+            <span class="stat-label">Crit</span>
+          </div>
+          <div class="stat-pill high" id="statPillHigh" title="Lỗ hổng Cao (High)">
+            <span class="stat-dot dot-high"></span>
+            <span class="stat-count" id="countHigh">0</span>
+            <span class="stat-label">High</span>
+          </div>
+          <div class="stat-pill med" id="statPillMed" title="Lỗ hổng Trung bình (Medium)">
+            <span class="stat-dot dot-med"></span>
+            <span class="stat-count" id="countMed">0</span>
+            <span class="stat-label">Med</span>
+          </div>
+          <div class="stat-pill low" id="statPillLow" title="Lỗ hổng Thấp (Low)">
+            <span class="stat-dot dot-low"></span>
+            <span class="stat-count" id="countLow">0</span>
+            <span class="stat-label">Low</span>
+          </div>
+        </div>
+
+        <!-- Filter Status Checkboxes -->
+        <div class="findings-status-filters">
+          <label class="status-check-item">
+            <input type="checkbox" id="chkFilterOpen" checked>
+            <span class="check-text">Open (<span id="countStatusOpen">0</span>)</span>
+          </label>
+          <label class="status-check-item">
+            <input type="checkbox" id="chkFilterFixed">
+            <span class="check-text">Fixed (<span id="countStatusFixed">0</span>)</span>
+          </label>
+          <label class="status-check-item">
+            <input type="checkbox" id="chkFilterIgnored">
+            <span class="check-text">Ignored (<span id="countStatusIgnored">0</span>)</span>
+          </label>
+        </div>
+
+        <!-- Severity Filter Chips -->
+        <div class="findings-sev-chips">
+          <button class="sev-chip active" data-sev="all">Tất cả</button>
+          <button class="sev-chip" data-sev="critical">🔴 Crit</button>
+          <button class="sev-chip" data-sev="high">🟠 High</button>
+          <button class="sev-chip" data-sev="medium">🟡 Med</button>
+          <button class="sev-chip" data-sev="low">🟢 Low</button>
+        </div>
+
+        <!-- Search Findings -->
+        <div class="sidebar-search">
+          <input type="text" id="findingSearchInput" placeholder="Lọc lỗ hổng theo CWE / Tên..." />
+        </div>
+
+        <!-- Findings List -->
+        <div class="findings-list-scroll" id="sidebarFindingsList">
+          <div class="sidebar-empty-hint">
+            Chưa phát hiện lỗ hổng bảo mật nào. Bấm "Phân tích" để rà soát mã nguồn.
+          </div>
+        </div>
+      </div>
+
+      <!-- View 3: Scan Engine & Pipeline Panel -->
+      <div class="sidebar-view-pane" id="viewScan">
+        <div class="scan-config-section">
+          <div class="section-title">PHẠM VI QUÉT (SCAN SCOPE)</div>
+          <div class="scope-selector-group">
+            <label class="scope-radio-card">
+              <input type="radio" name="scanScopeRadio" value="file" checked id="scopeRadioFile">
+              <div class="scope-card-content">
+                <span class="scope-icon">📄</span>
+                <div>
+                  <div class="scope-name">File hiện tại</div>
+                  <div class="scope-desc">Rà soát sâu file đang mở trên Monaco Editor</div>
+                </div>
+              </div>
+            </label>
+
+            <label class="scope-radio-card">
+              <input type="radio" name="scanScopeRadio" value="project" id="scopeRadioProject">
+              <div class="scope-card-content">
+                <span class="scope-icon">📁</span>
+                <div>
+                  <div class="scope-name">Toàn bộ Folder / Project</div>
+                  <div class="scope-desc">Quét multi-file, cross-file import & queue tối ưu</div>
+                </div>
+              </div>
+            </label>
+
+            <label class="scope-radio-card">
+              <input type="radio" name="scanScopeRadio" value="git" id="scopeRadioGit">
+              <div class="scope-card-content">
+                <span class="scope-icon">🔗</span>
+                <div>
+                  <div class="scope-name">Git Repository</div>
+                  <div class="scope-desc">Clone trực tiếp từ link GitHub và rà soát tự động</div>
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="scan-trigger-area" style="margin-top: 16px;">
+            <button id="sidebarRunScanBtn" class="btn-scan" style="width: 100%; justify-content: center;">
+              <span class="btn-scan-icon">⚡</span>
+              <span class="btn-scan-text">Bắt đầu quét bảo mật</span>
+            </button>
+          </div>
+
+          <!-- Pipeline Visual Indicator -->
+          <div class="pipeline-card" style="margin-top: 20px;">
+            <div class="section-title">PIPELINE QUÉT TOÀN DIỆN</div>
+            <div class="pipeline-steps">
+              <div class="pipeline-step" id="pipeStep1">
+                <span class="step-num">1</span>
+                <span class="step-label">Indexing &amp; AST Analysis</span>
+                <span class="step-status">Sẵn sàng</span>
+              </div>
+              <div class="pipeline-step" id="pipeStep2">
+                <span class="step-num">2</span>
+                <span class="step-label">Heuristic Regex Pre-scan</span>
+                <span class="step-status">Sẵn sàng</span>
+              </div>
+              <div class="pipeline-step" id="pipeStep3">
+                <span class="step-num">3</span>
+                <span class="step-label">AI Deep Analysis (Groq 120B)</span>
+                <span class="step-status">Sẵn sàng</span>
+              </div>
+              <div class="pipeline-step" id="pipeStep4">
+                <span class="step-num">4</span>
+                <span class="step-label">Cross-file Taint Tracking</span>
+                <span class="step-status">Sẵn sàng</span>
+              </div>
+              <div class="pipeline-step" id="pipeStep5">
+                <span class="step-num">5</span>
+                <span class="step-label">Gemini Assistant Verification</span>
+                <span class="step-status">Sẵn sàng</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- View 4: Project Risk & Security Gate Panel -->
+      <div class="sidebar-view-pane" id="viewRisk">
+        <div class="risk-overview-section">
+          <!-- Gate Banner -->
+          <div class="gate-status-card passed" id="securityGateCard">
+            <div class="gate-icon-large" id="gateIconLarge">🛡️</div>
+            <div class="gate-info">
+              <div class="gate-title" id="gateStatusTitle">SECURITY GATE: PASSED</div>
+              <div class="gate-desc" id="gateStatusDesc">Không có lỗ hổng Nghiêm trọng hoặc Cao nào đang mở.</div>
+            </div>
+          </div>
+
+          <!-- Diff across re-scans -->
+          <div class="diff-summary-card" style="margin-top: 14px;">
+            <div class="section-title">BIẾN ĐỘNG SAU LẦN QUÉT LẠI</div>
+            <div class="diff-metrics">
+              <div class="diff-box diff-new">
+                <span class="diff-val" id="diffNewCount">+0</span>
+                <span class="diff-lbl">Mới phát hiện</span>
+              </div>
+              <div class="diff-box diff-resolved">
+                <span class="diff-val" id="diffResolvedCount">-0</span>
+                <span class="diff-lbl">Đã khắc phục</span>
+              </div>
+              <div class="diff-box diff-remained">
+                <span class="diff-val" id="diffRemainedCount">0</span>
+                <span class="diff-lbl">Còn tồn đọng</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Coverage Indicators -->
+          <div class="coverage-card" style="margin-top: 14px;">
+            <div class="section-title">ĐỘ PHỦ PHÂN TÍCH (COVERAGE)</div>
+            <div class="coverage-item">
+              <div class="coverage-label-row">
+                <span>AI Live Scan Coverage</span>
+                <span id="aiCoverageText">100%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-bar-fill" id="aiCoverageFill" style="width: 100%;"></div>
+              </div>
+            </div>
+
+            <div class="coverage-item" style="margin-top: 10px;">
+              <div class="coverage-label-row">
+                <span>Heuristic OWASP Rule Coverage</span>
+                <span>100%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-bar-fill" style="width: 100%; background: #2ea043;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- View 5: Settings Panel -->
+      <div class="sidebar-view-pane" id="viewSettings">
+        <div class="settings-pane-content">
+          <div class="section-title">CẤU HÌNH BỘ MÁY QUÉT</div>
+          <div class="setting-item">
+            <label class="setting-label">AI Scanner Primary:</label>
+            <div class="setting-value-badge">⚡ Groq Cloud (openai/gpt-oss-120b)</div>
+          </div>
+          <div class="setting-item">
+            <label class="setting-label">AI Verification Secondary:</label>
+            <div class="setting-value-badge">✨ Google Gemini (gemini-3.5-flash-lite)</div>
+          </div>
+          <div class="setting-item">
+            <label class="setting-label">Quy tắc chuẩn:</label>
+            <div class="setting-value-badge">OWASP Top 10:2025 &amp; CWE Standards</div>
+          </div>
+          <div style="margin-top: 20px;">
+            <button id="sidebarApiKeyBtn" class="btn-scan" style="width: 100%; justify-content: center;">
+              🔑 Quản lý API Key &amp; Model
+            </button>
+          </div>
+        </div>
+      </div>
     </aside>
 
-    <!-- Center Column: Input Code / File Viewer -->
-    <section class="panel editor-panel">
-      <div class="panel-header">
-        <div class="panel-title-group">
-          <span class="panel-icon">💻</span>
-          <h2 id="currentFileTitle">Mã nguồn cần quét</h2>
+    <!-- 3. Center Workspace: Monaco Editor + Breadcrumbs + Problems Panel -->
+    <section class="main-workspace" id="mainWorkspace">
+
+      <!-- Breadcrumbs Sub-navbar -->
+      <div class="editor-breadcrumb-bar" id="editorBreadcrumbBar">
+        <div class="breadcrumb-left">
+          <button id="breadcrumbToggleSidebarBtn" class="btn-icon-subtle" title="Ẩn/Hiện Sidebar (Ctrl+B)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+          </button>
+
+          <div class="breadcrumb-path" id="editorBreadcrumbPath">
+            <span class="bc-item">📁 Project</span>
+            <span class="bc-sep">/</span>
+            <span class="bc-item" id="breadcrumbFileName">Mã nguồn cần quét</span>
+            <span class="bc-sep">:</span>
+            <span class="bc-line" id="breadcrumbLineNumber">1</span>
+          </div>
+
           <span id="fileModifiedBadge" class="file-modified-badge" style="display: none;">● Đã sửa</span>
         </div>
-        <div class="editor-controls">
-          <select id="languageSelect" class="styled-select" title="Chọn ngôn ngữ lập trình">
-            <option value="auto">Tự động nhận diện (Auto)</option>
-            <option value="python">Python</option>
-            <option value="javascript">JavaScript</option>
-            <option value="typescript">TypeScript</option>
-            <option value="php">PHP</option>
-            <option value="java">Java</option>
-            <option value="go">Go</option>
-            <option value="csharp">C#</option>
-            <option value="sql">SQL</option>
-          </select>
 
-          <label class="btn-file-upload" title="Tải 1 hoặc nhiều file từ máy tính">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="12" y1="18" x2="12" y2="12"/>
-              <line x1="9" y1="15" x2="15" y2="15"/>
-            </svg>
-            Tải file
-            <input type="file" id="fileInput" multiple style="display: none;">
-          </label>
+        <div class="breadcrumb-right">
+          <!-- Engine Provenance Chip -->
+          <div class="provenance-chip" id="provenanceBadge" title="Nguồn phân tích bảo mật">
+            <span class="prov-icon">⚡</span>
+            <span class="prov-text" id="provenanceText">Groq 120B Hybrid</span>
+          </div>
 
-          <label class="btn-file-upload btn-folder-upload" title="Tải nguyên cả thư mục dự án (Folder)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              <polyline points="12 11 12 17"/>
-              <polyline points="9 14 12 11 15 14"/>
-            </svg>
-            Tải thư mục
-            <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
-          </label>
+          <!-- Scope Badge -->
+          <span class="scope-chip" id="editorScopeBadge">📄 File Scope</span>
 
-          <button id="openGitModalBtn" class="btn-file-upload btn-git-upload" title="Quét trực tiếp từ GitHub Repository (hoặc thư mục Git chỉ định)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-            </svg>
-            Quét từ Git
+          <!-- Security Gate Badge -->
+          <span class="gate-chip gate-chip-pass" id="editorGateBadge">🟢 Gate Passed</span>
+
+          <!-- F8 Quick Navigation -->
+          <button id="btnPrevFinding" class="btn-icon-subtle" title="Lỗ hổng trước đó (Shift+F8)">
+            ▲
+          </button>
+          <button id="btnNextFinding" class="btn-icon-subtle" title="Lỗ hổng tiếp theo (F8)">
+            ▼
           </button>
 
-          <button id="toggleEditBtn" class="btn-file-upload btn-edit-mode" title="Bật/Tắt chế độ chỉnh sửa mã nguồn trực tiếp">
+          <!-- Toggle Right Drawer -->
+          <button id="toggleDrawerBtn" class="btn-icon-subtle" title="Mở ngăn chi tiết lỗ hổng (Drawer)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 20h9"/>
-              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-            </svg>
-            <span id="toggleEditText">Chỉnh sửa</span>
-          </button>
-
-          <button id="exportCodeBtn" class="btn-file-upload btn-export-code" title="Tải file mã nguồn hiện tại về máy tính">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Xuất file
-          </button>
-
-          <button id="clearBtn" class="btn-icon" title="Xóa nội dung">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="15" y1="3" x2="15" y2="21"/>
             </svg>
           </button>
         </div>
       </div>
 
-      <!-- Code Editor Area (Monaco Engine with Fallback) -->
-      <div class="editor-wrapper">
+      <!-- Editor Canvas Wrapper -->
+      <div class="editor-canvas-wrapper">
         <div id="monacoEditorContainer" class="monaco-editor-container"></div>
         <textarea id="codeEditor" spellcheck="false" style="display: none;" placeholder="// Dán đoạn mã nguồn bạn muốn kiểm tra bảo mật vào đây...
 // Bấm 'Phân tích' để rà soát tự động theo tiêu chuẩn OWASP Top 10
 // Hoặc bấm 'Tải thư mục' / 'Quét từ Git' để rà soát toàn bộ dự án!"></textarea>
-        <!-- Code Viewer hiển thị số dòng & bôi đỏ dòng lỗi (fallback nếu không có Monaco) -->
         <div id="codeViewer" class="code-viewer-container" style="display: none;"></div>
       </div>
 
       <!-- VS Code-style Problems Panel -->
       <div id="problemsPanel" class="problems-panel">
-        <div class="problems-panel-header">
+        <div class="problems-panel-header" id="problemsPanelHeader">
           <div class="problems-title-group">
             <span class="problems-panel-icon">⚠️</span>
             <span class="problems-panel-title">PROBLEMS</span>
@@ -168,6 +451,9 @@
             <button id="reScanCurrentBtn" class="btn-rescan-subtle" style="display: none;" title="Phát hiện code đã sửa, bấm để quét lại file này ngay">
               ⚡ Quét lại file này
             </button>
+            <button id="toggleProblemsBtn" class="btn-icon-subtle" title="Thu gọn / Mở rộng bảng Problems">
+              —
+            </button>
           </div>
         </div>
         <div id="problemsList" class="problems-list">
@@ -175,75 +461,296 @@
         </div>
       </div>
 
-      <!-- Action Footer -->
-      <div class="editor-footer">
-        <div class="char-count">
-          <span id="lineCount">0</span> dòng | <span id="charCount">0</span> ký tự
-        </div>
-        <button id="scanBtn" class="btn-scan">
-          <span class="btn-scan-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
+      <!-- Editor Status Bar -->
+      <footer class="editor-status-bar" id="editorStatusBar">
+        <div class="status-bar-left">
+          <span class="status-bar-item" id="editorCursorPos">Ln 1, Col 1</span>
+          <span class="status-bar-item">
+            <span id="lineCount">0</span> dòng | <span id="charCount">0</span> ký tự
           </span>
-          <span class="btn-scan-text">Phân tích File Hiện Tại</span>
-        </button>
-      </div>
+          <span class="status-bar-item">UTF-8</span>
+          <span class="status-bar-item">LF</span>
+        </div>
+
+        <div class="status-bar-right">
+          <select id="languageSelect" class="status-bar-select" title="Chọn ngôn ngữ lập trình">
+            <option value="auto">Auto Detect</option>
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="php">PHP</option>
+            <option value="java">Java</option>
+            <option value="go">Go</option>
+            <option value="csharp">C#</option>
+            <option value="sql">SQL</option>
+            <option value="html">HTML</option>
+            <option value="c">C/C++</option>
+          </select>
+
+          <button id="toggleEditBtn" class="status-bar-btn" title="Chế độ chỉnh sửa trực tiếp">
+            <span id="toggleEditText">Chỉnh sửa</span>
+          </button>
+
+          <button id="exportCodeBtn" class="status-bar-btn" title="Xuất file mã nguồn hiện tại">
+            Xuất file
+          </button>
+
+          <button id="clearBtn" class="status-bar-btn" title="Xóa trắng mã nguồn">
+            Xóa
+          </button>
+
+          <button id="scanBtn" class="status-bar-btn btn-scan-highlight">
+            <span class="btn-scan-icon">⚡</span>
+            <span class="btn-scan-text">Phân tích File Hiện Tại</span>
+          </button>
+        </div>
+      </footer>
     </section>
 
-    <!-- Right Column: Security Analysis Results -->
-    <section class="panel results-panel">
-      <div class="panel-header">
-        <div class="view-tabs">
-          <button id="tabDetailView" class="view-tab active">
-            <span class="tab-icon">📄</span> Chi tiết file
-          </button>
-          <button id="tabSummaryView" class="view-tab" style="display: none;">
-            <span class="tab-icon">📊</span> Tổng quan thư mục
-            <span id="summaryAlertBadge" class="tab-badge" style="display:none;">0</span>
-          </button>
-          <button id="tabHistoryView" class="view-tab">
-            <span class="tab-icon">🕒</span> Lịch sử quét
-            <span id="historyCountBadge" class="tab-badge-history">0</span>
-          </button>
+    <!-- 4. Secondary Drawer: Deep Dive Vulnerability Inspector (~420px) -->
+    <aside class="secondary-drawer" id="secondaryDrawer">
+      <!-- Drawer Header -->
+      <div class="drawer-header">
+        <div class="drawer-title-area">
+          <span id="drawerSeverityBadge" class="vuln-badge-severity severity-cao">High</span>
+          <h3 id="drawerVulnTitle" class="drawer-vuln-title">Chọn một lỗ hổng để xem chi tiết</h3>
         </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button id="exportReportBtn" class="btn-file-upload btn-export-report" style="display:none;" title="Xuất báo cáo lỗ hổng dạng Markdown / JSON">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-              <polyline points="10 9 9 9 8 9"/>
-            </svg>
-            Xuất báo cáo
-          </button>
-          <div id="resultMeta" class="result-meta"></div>
+        <div class="drawer-header-controls">
+          <!-- Finding State Selector -->
+          <select id="drawerStateSelect" class="styled-select drawer-state-select" title="Chuyển đổi trạng thái xử lý của lỗ hổng">
+            <option value="open">🟢 Open (Cần xử lý)</option>
+            <option value="fixed">✅ Fixed (Đã sửa)</option>
+            <option value="ignored">⏸️ Ignored (Bỏ qua)</option>
+            <option value="false_positive">🛡️ False Positive</option>
+            <option value="accepted_risk">⚠️ Accepted Risk</option>
+          </select>
+
+          <button id="closeDrawerBtn" class="drawer-close-btn" title="Đóng ngăn chi tiết">&times;</button>
         </div>
       </div>
 
-      <div id="resultsContainer" class="results-content">
-        <!-- Initial Empty State -->
-        <div class="empty-state">
-          <div class="empty-icon">🔍</div>
-          <h3>Chưa có dữ liệu phân tích</h3>
-          <p>Dán mã nguồn vào khung bên trái hoặc chọn 1 mẫu thử nghiệm rồi bấm <strong>"Phân tích File Hiện Tại"</strong> hoặc <strong>"⚡ Quét tất cả file"</strong> để AI rà soát bảo mật theo OWASP Top 10.</p>
-          
-          <div class="owasp-badges-preview">
-            <span>SQL Injection</span>
-            <span>XSS</span>
-            <span>Hardcoded Secret</span>
-            <span>Command Injection</span>
-            <span>Path Traversal</span>
-            <span>CSRF</span>
-            <span>IDOR</span>
+      <!-- Drawer 4 Tabs -->
+      <nav class="drawer-tabs">
+        <button class="drawer-tab active" id="drawerTabBtnOverview" data-pane="overview">
+          📋 Tổng quan
+        </button>
+        <button class="drawer-tab" id="drawerTabBtnEvidence" data-pane="evidence">
+          🔍 Bằng chứng
+        </button>
+        <button class="drawer-tab" id="drawerTabBtnFix" data-pane="fix">
+          🛠️ Khắc phục (Fix)
+        </button>
+        <button class="drawer-tab" id="drawerTabBtnReferences" data-pane="references">
+          📚 Tài liệu
+        </button>
+      </nav>
+
+      <!-- Drawer Panes Content -->
+      <div class="drawer-content-scroll" id="drawerScrollArea">
+
+        <!-- Pane 1: Overview -->
+        <div class="drawer-pane active" id="drawerPaneOverview">
+          <div class="drawer-empty-hint" id="drawerEmptyHint">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🛡️</div>
+            <h4>AppSec Vulnerability Inspector</h4>
+            <p>Bấm vào một lỗi trong danh sách Findings hoặc dòng cảnh báo trên Monaco Editor để hiển thị phân tích chuyên sâu.</p>
+          </div>
+
+          <div id="drawerOverviewContent" style="display: none;">
+            <div class="drawer-meta-grid">
+              <div class="meta-card">
+                <span class="meta-label">TIÊU CHUẨN</span>
+                <span class="meta-val" id="drawerMetaOwasp">OWASP Top 10:2025</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">CWE ID</span>
+                <span class="meta-val cwe-code" id="drawerMetaCwe">CWE-89</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">ĐỘ TIN CẬY</span>
+                <span class="meta-val" id="drawerMetaConfidence">Cao (High)</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">ENGINE PHÁT HIỆN</span>
+                <span class="meta-val" id="drawerMetaEngine">Groq 120B</span>
+              </div>
+            </div>
+
+            <div class="drawer-section">
+              <h4 class="drawer-sec-heading">📖 Cơ chế &amp; Giải thích chi tiết</h4>
+              <div id="drawerExplanation" class="drawer-text-block"></div>
+            </div>
+
+            <div class="drawer-section" id="drawerScenarioSection">
+              <h4 class="drawer-sec-heading">💥 Kịch bản tấn công (Attack Scenario / PoC)</h4>
+              <div id="drawerScenario" class="drawer-poc-block"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pane 2: Evidence (Vulnerable Code & Tainted Trace) -->
+        <div class="drawer-pane" id="drawerPaneEvidence">
+          <div id="drawerEvidenceContent">
+            <div class="drawer-section">
+              <div class="evidence-header-row">
+                <h4 class="drawer-sec-heading">📍 Đoạn code vi phạm</h4>
+                <button id="drawerJumpToCodeBtn" class="btn-secondary btn-mini">
+                  🔍 Nhảy tới dòng code trong Editor
+                </button>
+              </div>
+              <div class="code-evidence-box">
+                <div class="evidence-line-tag" id="drawerEvidenceLine">Dòng 12:</div>
+                <pre><code id="drawerEvidenceCode">// Code snippet...</code></pre>
+              </div>
+            </div>
+
+            <div class="drawer-section" style="margin-top: 14px;">
+              <h4 class="drawer-sec-heading">🌊 Luồng dữ liệu không an toàn (Taint Flow)</h4>
+              <div class="taint-trace-list" id="drawerTaintTrace">
+                <div class="taint-node">
+                  <span class="taint-tag taint-source">Source</span>
+                  <span class="taint-desc">Dữ liệu người dùng chưa qua xác thực đưa vào biến</span>
+                </div>
+                <div class="taint-arrow">↓</div>
+                <div class="taint-node">
+                  <span class="taint-tag taint-sink">Sink</span>
+                  <span class="taint-desc">Hàm thực thi truy vấn / render nhạy cảm</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pane 3: Fix & Diff (Before/After) -->
+        <div class="drawer-pane" id="drawerPaneFix">
+          <div id="drawerFixContent">
+            <div class="drawer-section">
+              <h4 class="drawer-sec-heading">🛠️ Hướng dẫn khắc phục an toàn</h4>
+              <div id="drawerRemediation" class="drawer-text-block"></div>
+            </div>
+
+            <!-- Before/After Diff Viewer -->
+            <div class="drawer-section" style="margin-top: 14px;">
+              <div class="diff-header-row">
+                <h4 class="drawer-sec-heading">🔄 So sánh Before vs After (Diff Preview)</h4>
+              </div>
+
+              <div class="diff-preview-container">
+                <div class="diff-pane diff-before">
+                  <div class="diff-pane-title">❌ Before (Không an toàn)</div>
+                  <pre class="diff-pre"><code id="drawerDiffBefore"></code></pre>
+                </div>
+                <div class="diff-pane diff-after">
+                  <div class="diff-pane-title">✅ After (Đã vá an toàn)</div>
+                  <pre class="diff-pre"><code id="drawerDiffAfter"></code></pre>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="fix-actions-row" style="margin-top: 14px;">
+                <button id="btnApplyFix" class="btn-scan btn-apply-fix" title="Thay thế trực tiếp đoạn code lỗi trong Monaco Editor bằng code an toàn">
+                  ⚡ Áp dụng Fix vào Editor
+                </button>
+                <button id="btnUndoFix" class="btn-secondary" style="display: none;" title="Hoàn tác lại đoạn code ban đầu trước khi fix">
+                  ↩ Hoàn tác Fix
+                </button>
+              </div>
+
+              <div class="fix-extra-actions" style="margin-top: 10px;">
+                <button id="btnCreatePr" class="btn-secondary" style="width: 100%; justify-content: center;" title="Tạo Pull Request mẫu để nộp lên GitHub">
+                  🚀 Tạo Pull Request (Patch file)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pane 4: References & Standards -->
+        <div class="drawer-pane" id="drawerPaneReferences">
+          <div class="drawer-section">
+            <h4 class="drawer-sec-heading">📚 Tài liệu tham khảo &amp; Tiêu chuẩn quốc tế</h4>
+            <div class="ref-links-list" id="drawerReferencesList">
+              <a href="https://owasp.org/Top10/" target="_blank" class="ref-link-card">
+                <span class="ref-icon">🌐</span>
+                <div>
+                  <div class="ref-title">OWASP Top 10 Web Application Security Risks</div>
+                  <div class="ref-desc">Tài liệu tiêu chuẩn vàng toàn cầu về an ninh ứng dụng web</div>
+                </div>
+              </a>
+              <a href="https://cwe.mitre.org" target="_blank" class="ref-link-card" id="drawerCweLink">
+                <span class="ref-icon">📋</span>
+                <div>
+                  <div class="ref-title" id="drawerCweLinkTitle">MITRE Common Weakness Enumeration</div>
+                  <div class="ref-desc">Danh mục phân loại lỗi lập trình và lỗ hổng phần mềm</div>
+                </div>
+              </a>
+            </div>
           </div>
         </div>
       </div>
+    </aside>
+
+    <!-- Hidden compatibility elements to ensure existing methods don't fail -->
+    <div style="display: none;">
+      <h2 id="currentFileTitle">Mã nguồn cần quét</h2>
+      <div id="resultsContainer" class="results-content"></div>
+      <div id="resultMeta"></div>
+      <button id="exportReportBtn"></button>
+      <button id="tabDetailView"></button>
+      <button id="tabSummaryView"></button>
+      <button id="tabHistoryView"></button>
+      <span id="summaryAlertBadge"></span>
+      <span id="historyCountBadge"></span>
+    </div>
   </main>
 
-  <!-- Modal Guide -->
+  <!-- Command Palette Modal (Ctrl + Shift + P) -->
+  <div id="commandPaletteModal" class="modal-overlay">
+    <div class="palette-dialog">
+      <div class="palette-input-wrapper">
+        <span class="palette-prompt">&gt;</span>
+        <input type="text" id="paletteSearchInput" placeholder="Gõ lệnh cần thực hiện (ví dụ: Scan, Fix, Toggle, API...)" autocomplete="off" />
+        <kbd class="kbd-badge">ESC</kbd>
+      </div>
+      <div class="palette-results-list" id="paletteResultsList">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Ignore Reason Modal -->
+  <div id="ignoreReasonModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3>⏸️ Xác nhận Bỏ qua Lỗ hổng (Ignore)</h3>
+        <button id="closeIgnoreModalBtn" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+          Vui lòng chọn lý do để ghi nhận vào lịch sử Security Audit:
+        </p>
+        <div class="form-group">
+          <label class="form-label">Lý do bỏ qua:</label>
+          <select id="ignoreReasonSelect" class="form-input styled-select" style="width: 100%;">
+            <option value="false_positive">Báo cáo sai (False Positive) - Code đã có biện pháp bảo vệ khác</option>
+            <option value="accepted_risk">Chấp nhận rủi ro (Accepted Risk) - Môi trường Dev/Test nội bộ</option>
+            <option value="mitigated_externally">Đã xử lý ở tầng ngoài (WAF / Reverse Proxy / Gateway)</option>
+            <option value="wont_fix">Không xử lý (Won't Fix) - Tính năng thiết kế theo yêu cầu</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ghi chú bổ sung (Tùy chọn):</label>
+          <input type="text" id="ignoreNotesInput" class="form-input" placeholder="Ví dụ: Đã kiểm tra qua filter nginx..." />
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap: 10px; margin-top: 16px;">
+          <button id="cancelIgnoreBtn" class="btn-secondary">Hủy</button>
+          <button id="confirmIgnoreBtn" class="btn-scan">Xác nhận Bỏ qua</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Guide (GitHub Actions CI/CD) -->
   <div id="guideModal" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -271,7 +778,7 @@ jobs:
           LANGUAGE: "Tiếng Việt"</code></pre>
 
         <h4>Cách 2: Triển khai dưới dạng Webhook Bot</h4>
-        <p>Cấu hình Webhook trong GitHub App trỏ về endpoint của bạn: <code>https://your-domain.com/api/github/webhooks</code></p>
+        <p>Cấu hình Webhook trong GitHub App trỏ về endpoint của bạn: <code>https://securityictu.duckdns.org/api/github/webhooks</code></p>
       </div>
     </div>
   </div>
@@ -294,7 +801,6 @@ jobs:
           <span style="font-size:0.75rem; color: var(--text-dim);">Chỉ cần dán link GitHub bất kỳ vào đây rồi bấm nút xanh bên dưới!</span>
         </div>
 
-        <!-- Tùy chọn nâng cao (mặc định ẩn để đơn giản) -->
         <details style="margin-top: 10px; margin-bottom: 12px; cursor: pointer;">
           <summary style="font-size:0.8rem; color: #79c0ff; user-select: none;">⚙️ Tùy chọn nâng cao (Không bắt buộc)</summary>
           <div style="margin-top: 10px; padding-left: 8px; border-left: 2px solid var(--border-color);">
@@ -394,6 +900,6 @@ jobs:
     </div>
   </div>
 
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js"></script>
 </body>
 </html>

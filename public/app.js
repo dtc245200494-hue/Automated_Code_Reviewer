@@ -239,6 +239,27 @@ function initMonacoEditor() {
           setFileModifiedState(true);
         });
 
+        monacoInstance.onDidChangeCursorPosition((e) => {
+          const line = e.position.lineNumber;
+          const col = e.position.column;
+          const cursorPosElem = document.getElementById('editorCursorPos');
+          if (cursorPosElem) cursorPosElem.textContent = `Ln ${line}, Col ${col}`;
+          const bcLine = document.getElementById('breadcrumbLineNumber');
+          if (bcLine) bcLine.textContent = line;
+        });
+
+        monacoInstance.onMouseDown((e) => {
+          if (window.monaco && e.target && e.target.type === window.monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+            const line = e.target.position?.lineNumber;
+            if (line && Array.isArray(activeFindingList) && activeFindingList.length) {
+              const foundIdx = activeFindingList.findIndex(v => (v.start_line || v.line_number || 1) === line);
+              if (foundIdx >= 0) {
+                selectVulnerability(foundIdx);
+              }
+            }
+          }
+        });
+
         if (codeEditor) codeEditor.style.display = 'none';
         if (codeViewer) codeViewer.style.display = 'none';
       }, function (err) {
@@ -262,8 +283,9 @@ function updateMonacoDecorations(vulnerabilities = [], isDimmed = false) {
 
     const totalLines = model.getLineCount();
     const newDecorations = [];
+    const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'current';
 
-    vulnerabilities.forEach(v => {
+    vulnerabilities.forEach((v, idx) => {
       let startLine = Number.parseInt(v.start_line || v.line_number, 10);
       if (!Number.isFinite(startLine) || startLine < 1) startLine = 1;
       if (startLine > totalLines) startLine = totalLines;
@@ -276,18 +298,24 @@ function updateMonacoDecorations(vulnerabilities = [], isDimmed = false) {
       const endCol = model.getLineMaxColumn(endLine);
 
       const sev = (v.severity || 'Cao').toLowerCase();
-      let sevClass = 'monaco-vuln-range-high';
-      if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevClass = 'monaco-vuln-range-critical';
-      else if (sev.includes('thấp') || sev.includes('low')) sevClass = 'monaco-vuln-range-low';
-      else if (sev.includes('trung') || sev.includes('medium')) sevClass = 'monaco-vuln-range-medium';
+      let sevKey = 'high';
+      if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevKey = 'critical';
+      else if (sev.includes('thấp') || sev.includes('low')) sevKey = 'low';
+      else if (sev.includes('trung') || sev.includes('medium')) sevKey = 'medium';
 
-      const className = isDimmed ? `${sevClass} monaco-vuln-range-dimmed` : sevClass;
+      const st = (typeof getFindingState === 'function') ? getFindingState(v, filePath) : 'open';
+      if (st === 'fixed' || st === 'ignored') {
+        return; // Không bôi đỏ lỗi đã fix hoặc đã bỏ qua
+      }
 
-      const mdText = `**[${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}**\n\n`
+      const className = isDimmed ? `monaco-squiggly-${sevKey} monaco-vuln-range-dimmed` : `monaco-squiggly-${sevKey}`;
+
+      const mdText = `🛡️ **[${v.severity || 'Cao'}] ${v.type || 'Lỗ hổng bảo mật'}**\n\n`
         + `- **Tiêu chuẩn**: \`${v.owasp_category || 'OWASP Top 10:2025'}\` | \`${v.cwe || 'CWE'}\`\n`
         + `- **Độ tin cậy**: ${v.confidence || 'Cao'}\n\n`
-        + (v.explanation ? `**Giải thích:** ${v.explanation}\n\n` : '')
-        + (v.remediation ? `**Khắc phục:** ${v.remediation}` : '');
+        + (v.explanation ? `**Cơ chế:** ${v.explanation}\n\n` : '')
+        + (v.remediation ? `💡 **Khắc phục:** ${v.remediation}\n\n` : '')
+        + `⚡ *Nhấp biểu tượng ở lề hoặc bấm F8 để mở chi tiết & Áp dụng Quick Fix tự động.*`;
 
       const hoverMessage = {
         value: mdText,
@@ -303,10 +331,10 @@ function updateMonacoDecorations(vulnerabilities = [], isDimmed = false) {
         options: {
           isWholeLine: true,
           className: className,
-          glyphMarginClassName: 'monaco-vuln-glyph',
+          glyphMarginClassName: `monaco-vuln-gutter-${sevKey}`,
           hoverMessage: hoverMessage,
           overviewRuler: {
-            color: sevClass.includes('critical') ? '#f85149' : (sevClass.includes('medium') ? '#d29922' : '#ff7b72'),
+            color: sevKey === 'critical' ? '#f85149' : (sevKey === 'medium' ? '#d29922' : (sevKey === 'low' ? '#3fb950' : '#ff7b72')),
             position: window.monaco.editor?.OverviewRulerLane?.Right || 2
           }
         }
@@ -338,47 +366,53 @@ function renderProblemsPanel(vulnerabilities = [], isDimmed = false) {
   if (problemsBadge) problemsBadge.textContent = count;
 
   if (count === 0) {
-    problemsList.innerHTML = '<div class="problems-empty">Chưa có phát hiện bảo mật nào trong file này.</div>';
+    problemsList.innerHTML = '<div class="problems-empty" style="padding:10px 14px;color:var(--text-dim);font-size:0.8rem;">Chưa có phát hiện bảo mật nào trong file này.</div>';
     return;
   }
 
   let html = '';
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'source_code';
+  const fileName = filePath.split('/').pop().split('\\').pop();
+
   vulnerabilities.forEach((v, idx) => {
     const sev = (v.severity || 'Cao').toLowerCase();
     let sevKey = 'high';
-    if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevKey = 'critical';
-    else if (sev.includes('thấp') || sev.includes('low')) sevKey = 'low';
-    else if (sev.includes('trung') || sev.includes('medium')) sevKey = 'medium';
+    let sevSlug = 'cao';
+    if (sev.includes('nghiêm trọng') || sev.includes('critical')) {
+      sevKey = 'critical';
+      sevSlug = 'nghiêm-trọng';
+    } else if (sev.includes('thấp') || sev.includes('low')) {
+      sevKey = 'low';
+      sevSlug = 'thấp';
+    } else if (sev.includes('trung') || sev.includes('medium')) {
+      sevKey = 'medium';
+      sevSlug = 'trung-bình';
+    }
 
     const startLine = v.start_line || v.line_number || 1;
     const endLine = v.end_line || startLine;
     const lineLabel = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`;
+    const st = (typeof getFindingState === 'function') ? getFindingState(v, filePath) : 'open';
 
     html += `
-      <div class="problem-row severity-${sevKey}" data-vuln-index="${idx}" title="Bấm để nhảy tới vị trí trong editor">
-        <div class="problem-row-left">
-          <span class="problem-severity-tag ${sevKey}">${escapeHtml(v.severity || 'Cao')}</span>
-          <span class="problem-title">${escapeHtml(v.type || 'Lỗ hổng bảo mật')}</span>
-          <span class="problem-cwe">${escapeHtml(v.cwe || 'CWE')}</span>
-          ${isDimmed ? '<span style="font-size:0.7rem; color:#d29922;">(Mã nguồn đã đổi)</span>' : ''}
+      <div class="problems-row" data-vuln-index="${idx}" onclick="selectVulnerability(${idx})" title="Bấm để xem chi tiết và fix lỗi">
+        <div class="problems-col-sev">
+          <span class="vuln-badge-severity severity-${sevSlug}" style="font-size:0.68rem;padding:1px 6px;">${escapeHtml(v.severity || 'Cao')}</span>
         </div>
-        <div class="problem-row-right">
-          <span class="problem-location">${lineLabel}</span>
+        <div class="problems-col-rule">
+          <strong>${escapeHtml(v.type || 'Lỗ hổng')}</strong>: ${escapeHtml(v.cwe || 'CWE')} - ${escapeHtml(v.owasp_category || 'OWASP')}
+        </div>
+        <div class="problems-col-file">${escapeHtml(fileName)}:${startLine}</div>
+        <div class="problems-col-status">
+          <span style="font-size:0.72rem;">${st === 'open' ? '🔴 Open' : (st === 'fixed' ? '✅ Fixed' : '⏸️ Ignored')}</span>
         </div>
       </div>
     `;
   });
 
   problemsList.innerHTML = html;
-
-  problemsList.querySelectorAll('.problem-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const idx = Number.parseInt(row.getAttribute('data-vuln-index'), 10);
-      const vuln = vulnerabilities[idx];
-      revealVulnerabilityInEditor(vuln);
-    });
-  });
 }
+
 
 function renderSystemError(info) {
   const errMessage = typeof info === 'string' ? info : (info.error || info.message || 'Lỗi không xác định');
@@ -693,6 +727,12 @@ function selectUploadedFile(index) {
   const file = uploadedFiles[index];
 
   currentFileTitle.textContent = file.path;
+  const fileName = (file.path || file.name || 'file').split('/').pop().split('\\').pop();
+  const bcName = document.getElementById('breadcrumbFileName');
+  if (bcName) bcName.textContent = fileName;
+  const bcLine = document.getElementById('breadcrumbLineNumber');
+  if (bcLine) bcLine.textContent = '1';
+
   languageSelect.value = file.language || 'auto';
   setEditorCode(file.content, file.language || 'auto');
   renderFileTree();
@@ -2072,6 +2112,30 @@ function renderReport(result, duration) {
   renderProblemsPanel(vulns, false);
   setFileModifiedState(false);
 
+  // AppSec IDE Studio State Updates
+  activeFindingList = vulns;
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+  const fileName = filePath.split('/').pop().split('\\').pop();
+  const bcName = document.getElementById('breadcrumbFileName');
+  if (bcName) bcName.textContent = fileName;
+
+  const provText = document.getElementById('provenanceText');
+  if (provText) {
+    provText.textContent = result.source === 'ai_live' ? (result.model_used || 'Groq 120B / Gemini') : 'Heuristic Engine';
+  }
+
+  if (typeof updateScanDiffMetrics === 'function') {
+    updateScanDiffMetrics(vulns, filePath);
+  }
+  if (typeof updateFindingsUI === 'function') {
+    updateFindingsUI();
+  }
+
+  if (vulns.length > 0 && typeof selectVulnerability === 'function') {
+    switchSidebarView('findings');
+    selectVulnerability(0);
+  }
+
   // Fallback bôi đỏ codeViewer nếu không có Monaco
   if (!isMonacoLoaded) {
     renderCodeViewerWithHighlights(codeEditor ? codeEditor.value : '', vulns);
@@ -2264,3 +2328,842 @@ function exportSecurityReport() {
   const reportFilename = `Security_Report_${safeReportName}_${Date.now()}.md`;
   downloadBlobFile(md, reportFilename, 'text/markdown;charset=utf-8');
 }
+
+/* ==========================================================================
+   APPSEC STUDIO IDE ENGINE - ACTIVITY BAR, DRAWER, FINGERPRINTS & COMMANDS
+   ========================================================================== */
+
+let activeSidebarView = 'explorer';
+let isSidebarCollapsed = false;
+let isDrawerCollapsed = true;
+let activeDrawerTab = 'overview';
+let activeFindingIndex = -1;
+let activeFindingList = [];
+let editorCodeSnapshotBeforeFix = null;
+let previousScanFingerprints = new Set();
+let findingFilterSev = 'all';
+let findingSearchQuery = '';
+let pendingIgnoreFinding = null;
+
+// Fingerprinting & Persistent State
+const VULN_STATES_KEY = 'ai_security_scanner_vuln_states';
+let findingStates = {};
+
+function loadVulnStates() {
+  try {
+    const raw = localStorage.getItem(VULN_STATES_KEY);
+    findingStates = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    findingStates = {};
+  }
+}
+
+function saveVulnStates() {
+  try {
+    localStorage.setItem(VULN_STATES_KEY, JSON.stringify(findingStates));
+  } catch (e) {}
+}
+
+function computeFindingFingerprint(v, filePath) {
+  const pathStr = filePath || (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'current';
+  const startLine = v.start_line || v.line_number || 1;
+  const type = v.cwe || v.type || 'vuln';
+  const snip = (v.affected_lines || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  return `${pathStr}::${type}::L${startLine}::${snip}`;
+}
+
+function getFindingState(v, filePath) {
+  const fp = computeFindingFingerprint(v, filePath);
+  const val = findingStates[fp];
+  if (!val) return 'open';
+  if (typeof val === 'string') return val;
+  return val.state || 'open';
+}
+
+function setFindingState(v, filePath, state, reason = '', notes = '') {
+  const fp = computeFindingFingerprint(v, filePath);
+  findingStates[fp] = {
+    state: state,
+    reason: reason,
+    notes: notes,
+    updatedAt: new Date().toISOString()
+  };
+  saveVulnStates();
+  updateFindingsUI();
+  if (currentActiveReport && currentActiveReport.vulnerabilities) {
+    updateMonacoDecorations(currentActiveReport.vulnerabilities, false);
+    renderProblemsPanel(currentActiveReport.vulnerabilities, false);
+  }
+}
+
+// Sidebar View Switching & Collapsing
+function switchSidebarView(viewName) {
+  activeSidebarView = viewName;
+  document.querySelectorAll('.activity-btn[data-view]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === viewName);
+  });
+
+  const icons = { explorer: '📁', findings: '🛡️', scan: '⚡', risk: '📊', settings: '⚙️' };
+  const titles = { explorer: 'EXPLORER', findings: 'FINDINGS', scan: 'SCAN ENGINE', risk: 'PROJECT RISK', settings: 'SETTINGS' };
+
+  const iconElem = document.getElementById('sidebarHeaderIcon');
+  const titleElem = document.getElementById('sidebarHeaderTitle');
+  if (iconElem) iconElem.textContent = icons[viewName] || '📁';
+  if (titleElem) titleElem.textContent = titles[viewName] || 'EXPLORER';
+
+  document.querySelectorAll('.sidebar-view-pane').forEach(pane => {
+    pane.classList.remove('active');
+  });
+
+  const targetPane = document.getElementById('view' + viewName.charAt(0).toUpperCase() + viewName.slice(1));
+  if (targetPane) targetPane.classList.add('active');
+
+  if (isSidebarCollapsed) {
+    togglePrimarySidebar(false);
+  }
+}
+
+function togglePrimarySidebar(forceCollapse) {
+  const sidebar = document.getElementById('primarySidebar');
+  if (!sidebar) return;
+  if (typeof forceCollapse === 'boolean') {
+    isSidebarCollapsed = forceCollapse;
+  } else {
+    isSidebarCollapsed = !isSidebarCollapsed;
+  }
+  sidebar.classList.toggle('collapsed', isSidebarCollapsed);
+  if (isMonacoLoaded && monacoInstance) {
+    setTimeout(() => monacoInstance.layout(), 220);
+  }
+}
+
+// Secondary Drawer Toggling & Tabs
+function toggleSecondaryDrawer(forceOpen) {
+  const drawer = document.getElementById('secondaryDrawer');
+  if (!drawer) return;
+  if (typeof forceOpen === 'boolean') {
+    isDrawerCollapsed = !forceOpen;
+  } else {
+    isDrawerCollapsed = !isDrawerCollapsed;
+  }
+  drawer.classList.toggle('collapsed', isDrawerCollapsed);
+  if (isMonacoLoaded && monacoInstance) {
+    setTimeout(() => monacoInstance.layout(), 220);
+  }
+}
+
+function switchDrawerTab(tabName) {
+  activeDrawerTab = tabName;
+  document.querySelectorAll('.drawer-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.pane === tabName);
+  });
+  document.querySelectorAll('.drawer-pane').forEach(p => {
+    p.classList.remove('active');
+  });
+  const target = document.getElementById('drawerPane' + tabName.charAt(0).toUpperCase() + tabName.slice(1));
+  if (target) target.classList.add('active');
+}
+
+// Select a Vulnerability Finding
+function selectVulnerability(idx) {
+  if (!activeFindingList || idx < 0 || idx >= activeFindingList.length) return;
+  activeFindingIndex = idx;
+  const v = activeFindingList[idx];
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+
+  // Highlight in sidebar card list
+  document.querySelectorAll('.findings-item-card').forEach((card) => {
+    const cardIdx = Number.parseInt(card.getAttribute('data-index'), 10);
+    card.classList.toggle('active', cardIdx === idx);
+  });
+
+  // Jump in Monaco Editor
+  revealVulnerabilityInEditor(v);
+
+  const line = v.start_line || v.line_number || 1;
+  const bcLine = document.getElementById('breadcrumbLineNumber');
+  if (bcLine) bcLine.textContent = line;
+
+  // Open & Populate Drawer
+  toggleSecondaryDrawer(true);
+  populateDrawerWithVuln(v, filePath);
+}
+
+function populateDrawerWithVuln(v, filePath) {
+  const state = getFindingState(v, filePath);
+  const drawerStateSelect = document.getElementById('drawerStateSelect');
+  if (drawerStateSelect) drawerStateSelect.value = state;
+
+  const titleElem = document.getElementById('drawerVulnTitle');
+  if (titleElem) titleElem.textContent = `${v.type || 'Lỗ hổng bảo mật'}`;
+
+  const sevBadge = document.getElementById('drawerSeverityBadge');
+  if (sevBadge) {
+    const sevSlug = (v.severity || 'Cao').toLowerCase().replace(/\s+/g, '-');
+    sevBadge.className = `vuln-badge-severity severity-${sevSlug}`;
+    sevBadge.textContent = v.severity || 'Cao';
+  }
+
+  // Overview Tab
+  const emptyHint = document.getElementById('drawerEmptyHint');
+  const overviewContent = document.getElementById('drawerOverviewContent');
+  if (emptyHint) emptyHint.style.display = 'none';
+  if (overviewContent) overviewContent.style.display = 'block';
+
+  const owaspEl = document.getElementById('drawerMetaOwasp');
+  const cweEl = document.getElementById('drawerMetaCwe');
+  const confEl = document.getElementById('drawerMetaConfidence');
+  const engEl = document.getElementById('drawerMetaEngine');
+
+  if (owaspEl) owaspEl.textContent = v.owasp_category || 'OWASP Top 10:2025';
+  if (cweEl) cweEl.textContent = v.cwe || 'CWE';
+  if (confEl) confEl.textContent = v.confidence || 'Cao';
+  if (engEl) engEl.textContent = currentActiveReport?.model_used || 'Groq 120B / Gemini';
+
+  const explEl = document.getElementById('drawerExplanation');
+  if (explEl) explEl.textContent = v.explanation || 'Chưa có thông tin giải thích chi tiết.';
+
+  const scenSec = document.getElementById('drawerScenarioSection');
+  const scenBox = document.getElementById('drawerScenario');
+  if (scenSec && scenBox) {
+    if (v.attack_scenario) {
+      scenSec.style.display = 'block';
+      scenBox.textContent = v.attack_scenario;
+    } else {
+      scenSec.style.display = 'none';
+    }
+  }
+
+  // Evidence Tab
+  const startLine = v.start_line || v.line_number || 1;
+  const endLine = v.end_line || startLine;
+  const evLineEl = document.getElementById('drawerEvidenceLine');
+  const evCodeEl = document.getElementById('drawerEvidenceCode');
+  if (evLineEl) evLineEl.textContent = startLine === endLine ? `Dòng ${startLine}:` : `Dòng ${startLine}-${endLine}:`;
+  if (evCodeEl) evCodeEl.textContent = v.affected_lines || '// Không có đoạn code trích xuất';
+
+  // Fix Tab
+  const remEl = document.getElementById('drawerRemediation');
+  if (remEl) remEl.textContent = v.remediation || 'Khắc phục bằng cách áp dụng chuẩn mã hóa và kiểm tra dữ liệu đầu vào.';
+
+  const diffBeforeEl = document.getElementById('drawerDiffBefore');
+  const diffAfterEl = document.getElementById('drawerDiffAfter');
+  if (diffBeforeEl) diffBeforeEl.textContent = v.affected_lines || '// Đoạn code có nguy cơ';
+  if (diffAfterEl) diffAfterEl.textContent = v.fixed_code || '// Code mẫu an toàn';
+
+  const undoBtn = document.getElementById('btnUndoFix');
+  if (undoBtn) undoBtn.style.display = (editorCodeSnapshotBeforeFix ? 'inline-flex' : 'none');
+
+  // References Tab
+  const cweNum = (v.cwe || '').replace(/\D/g, '');
+  const cweLink = document.getElementById('drawerCweLink');
+  const cweTitle = document.getElementById('drawerCweLinkTitle');
+  if (cweLink && cweNum) {
+    cweLink.href = `https://cwe.mitre.org/data/definitions/${cweNum}.html`;
+    if (cweTitle) cweTitle.textContent = `MITRE CWE-${cweNum} Specification`;
+  }
+}
+
+// Quick Fix Engine
+function applyFixToEditor() {
+  if (activeFindingIndex < 0 || !activeFindingList[activeFindingIndex]) {
+    alert('Vui lòng chọn một lỗ hổng trong danh sách để áp dụng Fix.');
+    return;
+  }
+  const v = activeFindingList[activeFindingIndex];
+  if (!v.fixed_code) {
+    alert('Lỗ hổng này không có đoạn code mẫu (fixed_code) để áp dụng tự động.');
+    return;
+  }
+
+  const code = getEditorCode();
+  editorCodeSnapshotBeforeFix = code;
+
+  let startLine = Number.parseInt(v.start_line || v.line_number, 10) || 1;
+  let endLine = Number.parseInt(v.end_line || startLine, 10) || startLine;
+
+  if (isMonacoLoaded && monacoInstance && window.monaco) {
+    const model = monacoInstance.getModel();
+    const maxCol = model.getLineMaxColumn(endLine);
+    const range = new window.monaco.Range(startLine, 1, endLine, maxCol);
+
+    monacoInstance.executeEdits('appsec-quick-fix', [{
+      range: range,
+      text: v.fixed_code,
+      forceMoveMarkers: true
+    }]);
+    monacoInstance.pushUndoStop();
+  } else {
+    const lines = code.split('\n');
+    lines.splice(startLine - 1, (endLine - startLine + 1), v.fixed_code);
+    setEditorCode(lines.join('\n'));
+  }
+
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+  setFindingState(v, filePath, 'fixed');
+
+  const undoBtn = document.getElementById('btnUndoFix');
+  if (undoBtn) undoBtn.style.display = 'inline-flex';
+
+  alert(`✅ Đã áp dụng bản vá an toàn cho "${v.type}" tại dòng ${startLine}!`);
+}
+
+function undoFixInEditor() {
+  if (!editorCodeSnapshotBeforeFix) return;
+  setEditorCode(editorCodeSnapshotBeforeFix);
+  editorCodeSnapshotBeforeFix = null;
+
+  if (activeFindingIndex >= 0 && activeFindingList[activeFindingIndex]) {
+    const v = activeFindingList[activeFindingIndex];
+    const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+    setFindingState(v, filePath, 'open');
+  }
+
+  const undoBtn = document.getElementById('btnUndoFix');
+  if (undoBtn) undoBtn.style.display = 'none';
+
+  alert('↩ Đã hoàn tác mã nguồn lại trạng thái trước khi Fix.');
+}
+
+function createPullRequestPatch() {
+  if (activeFindingIndex < 0 || !activeFindingList[activeFindingIndex]) {
+    alert('Vui lòng chọn một lỗ hổng.');
+    return;
+  }
+  const v = activeFindingList[activeFindingIndex];
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'source_code.js';
+
+  let patch = `--- a/${filePath}\n+++ b/${filePath}\n@@ -${v.start_line || 1},1 +${v.start_line || 1},1 @@\n`;
+  if (v.affected_lines) {
+    v.affected_lines.split('\n').forEach(line => { patch += `-${line}\n`; });
+  }
+  if (v.fixed_code) {
+    v.fixed_code.split('\n').forEach(line => { patch += `+${line}\n`; });
+  }
+
+  const filename = `patch_${v.type ? v.type.replace(/\W+/g, '_') : 'fix'}_${Date.now()}.diff`;
+  downloadBlobFile(patch, filename, 'text/plain;charset=utf-8');
+  alert(`🚀 Đã tạo file Git Patch (${filename}). Bạn có thể dùng lệnh: git apply ${filename}`);
+}
+
+// Navigation (F8 / Shift+F8)
+function navigateNextFinding() {
+  if (!activeFindingList || !activeFindingList.length) return;
+  let nextIdx = activeFindingIndex + 1;
+  if (nextIdx >= activeFindingList.length) nextIdx = 0;
+  selectVulnerability(nextIdx);
+}
+
+function navigatePrevFinding() {
+  if (!activeFindingList || !activeFindingList.length) return;
+  let prevIdx = activeFindingIndex - 1;
+  if (prevIdx < 0) prevIdx = activeFindingList.length - 1;
+  selectVulnerability(prevIdx);
+}
+
+// Update Findings UI List & Gate Status
+function updateFindingsUI() {
+  const list = document.getElementById('sidebarFindingsList');
+  if (!list) return;
+
+  const vulns = activeFindingList || [];
+  const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+
+  let countCrit = 0, countHigh = 0, countMed = 0, countLow = 0;
+  let countOpen = 0, countFixed = 0, countIgnored = 0;
+
+  vulns.forEach(v => {
+    const sev = (v.severity || 'Cao').toLowerCase();
+    const st = getFindingState(v, filePath);
+
+    if (st === 'open') {
+      if (sev.includes('nghiêm trọng') || sev.includes('critical')) countCrit++;
+      else if (sev.includes('thấp') || sev.includes('low')) countLow++;
+      else if (sev.includes('trung') || sev.includes('medium')) countMed++;
+      else countHigh++;
+      countOpen++;
+    } else if (st === 'fixed') {
+      countFixed++;
+    } else {
+      countIgnored++;
+    }
+  });
+
+  const elCrit = document.getElementById('countCrit');
+  const elHigh = document.getElementById('countHigh');
+  const elMed = document.getElementById('countMed');
+  const elLow = document.getElementById('countLow');
+  if (elCrit) elCrit.textContent = countCrit;
+  if (elHigh) elHigh.textContent = countHigh;
+  if (elMed) elMed.textContent = countMed;
+  if (elLow) elLow.textContent = countLow;
+
+  const elOpen = document.getElementById('countStatusOpen');
+  const elFixed = document.getElementById('countStatusFixed');
+  const elIgnored = document.getElementById('countStatusIgnored');
+  if (elOpen) elOpen.textContent = countOpen;
+  if (elFixed) elFixed.textContent = countFixed;
+  if (elIgnored) elIgnored.textContent = countIgnored;
+
+  const findingsNavBadge = document.getElementById('findingsNavBadge');
+  if (findingsNavBadge) {
+    if (countOpen > 0) {
+      findingsNavBadge.style.display = 'inline-block';
+      findingsNavBadge.textContent = countOpen;
+    } else {
+      findingsNavBadge.style.display = 'none';
+    }
+  }
+
+  const showOpen = document.getElementById('chkFilterOpen')?.checked ?? true;
+  const showFixed = document.getElementById('chkFilterFixed')?.checked ?? false;
+  const showIgnored = document.getElementById('chkFilterIgnored')?.checked ?? false;
+
+  const filtered = vulns.map((v, idx) => ({ ...v, originalIndex: idx })).filter(v => {
+    const st = getFindingState(v, filePath);
+    if (st === 'open' && !showOpen) return false;
+    if (st === 'fixed' && !showFixed) return false;
+    if ((st === 'ignored' || st === 'false_positive' || st === 'accepted_risk') && !showIgnored) return false;
+
+    const sev = (v.severity || 'Cao').toLowerCase();
+    if (findingFilterSev === 'critical' && !sev.includes('nghiêm trọng') && !sev.includes('critical')) return false;
+    if (findingFilterSev === 'high' && !sev.includes('cao') && !sev.includes('high')) return false;
+    if (findingFilterSev === 'medium' && !sev.includes('trung') && !sev.includes('medium')) return false;
+    if (findingFilterSev === 'low' && !sev.includes('thấp') && !sev.includes('low')) return false;
+
+    if (findingSearchQuery) {
+      const q = findingSearchQuery.toLowerCase();
+      const text = `${v.type} ${v.cwe} ${v.owasp_category} ${v.explanation}`.toLowerCase();
+      if (!text.includes(q)) return false;
+    }
+
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = `
+      <div class="sidebar-empty-hint">
+        ${vulns.length === 0 ? 'Chưa phát hiện lỗ hổng bảo mật nào trong file này.' : 'Không có phát hiện nào phù hợp với bộ lọc.'}
+      </div>
+    `;
+  } else {
+    let html = '';
+    filtered.forEach(v => {
+      const idx = v.originalIndex;
+      const st = getFindingState(v, filePath);
+      const sev = (v.severity || 'Cao').toLowerCase();
+      let sevSlug = 'cao';
+      if (sev.includes('nghiêm trọng') || sev.includes('critical')) sevSlug = 'nghiêm-trọng';
+      else if (sev.includes('thấp') || sev.includes('low')) sevSlug = 'thấp';
+      else if (sev.includes('trung') || sev.includes('medium')) sevSlug = 'trung-bình';
+
+      const startLine = v.start_line || v.line_number || 1;
+      const endLine = v.end_line || startLine;
+      const lineText = startLine === endLine ? `L${startLine}` : `L${startLine}-${endLine}`;
+      const isActive = (idx === activeFindingIndex);
+
+      html += `
+        <div class="findings-item-card ${isActive ? 'active' : ''} state-${st}" data-index="${idx}" onclick="selectVulnerability(${idx})">
+          <div class="card-top-row">
+            <span class="vuln-badge-severity severity-${sevSlug}">${escapeHtml(v.severity || 'Cao')}</span>
+            <span class="card-loc">${lineText}</span>
+          </div>
+          <div class="card-title">${escapeHtml(v.type || 'Lỗ hổng bảo mật')}</div>
+          <div class="card-bottom-row">
+            <span>${escapeHtml(v.cwe || 'CWE')}</span>
+            <span>${st === 'fixed' ? '✅ Fixed' : (st === 'open' ? '🔴 Open' : '⏸️ ' + st)}</span>
+          </div>
+        </div>
+      `;
+    });
+    list.innerHTML = html;
+  }
+
+  // Security Gate Status Evaluation
+  const gateFailed = (countCrit > 0 || countHigh > 0);
+  const gateCard = document.getElementById('securityGateCard');
+  const gateTitle = document.getElementById('gateStatusTitle');
+  const gateDesc = document.getElementById('gateStatusDesc');
+  const gateIcon = document.getElementById('gateIconLarge');
+  const gateBadge = document.getElementById('editorGateBadge');
+
+  if (gateFailed) {
+    if (gateCard) gateCard.className = 'gate-status-card failed';
+    if (gateTitle) gateTitle.textContent = 'SECURITY GATE: FAILED';
+    if (gateDesc) gateDesc.textContent = `Tồn đọng ${countCrit} Nghiêm trọng & ${countHigh} Cao chưa xử lý!`;
+    if (gateIcon) gateIcon.textContent = '🚨';
+    if (gateBadge) {
+      gateBadge.className = 'gate-chip gate-chip-fail';
+      gateBadge.textContent = '🔴 Gate Failed';
+    }
+  } else {
+    if (gateCard) gateCard.className = 'gate-status-card passed';
+    if (gateTitle) gateTitle.textContent = 'SECURITY GATE: PASSED';
+    if (gateDesc) gateDesc.textContent = 'Không có lỗ hổng Nghiêm trọng hoặc Cao nào đang mở.';
+    if (gateIcon) gateIcon.textContent = '🛡️';
+    if (gateBadge) {
+      gateBadge.className = 'gate-chip gate-chip-pass';
+      gateBadge.textContent = '🟢 Gate Passed';
+    }
+  }
+}
+
+function updateScanDiffMetrics(newVulns = [], filePath) {
+  const currentFps = new Set(newVulns.map(v => computeFindingFingerprint(v, filePath)));
+  let diffNew = 0;
+  let diffResolved = 0;
+
+  currentFps.forEach(fp => {
+    if (!previousScanFingerprints.has(fp)) {
+      diffNew++;
+    }
+  });
+
+  previousScanFingerprints.forEach(fp => {
+    if (!currentFps.has(fp)) {
+      diffResolved++;
+    }
+  });
+
+  const diffNewEl = document.getElementById('diffNewCount');
+  const diffResolvedEl = document.getElementById('diffResolvedCount');
+  const diffRemainedEl = document.getElementById('diffRemainedCount');
+  if (diffNewEl) diffNewEl.textContent = `+${diffNew}`;
+  if (diffResolvedEl) diffResolvedEl.textContent = `-${diffResolved}`;
+  if (diffRemainedEl) diffRemainedEl.textContent = `${currentFps.size}`;
+
+  previousScanFingerprints = currentFps;
+}
+
+// Command Palette Engine
+const COMMANDS = [
+  { id: 'scan_file', title: 'Run Security Scan (Current File)', icon: '⚡', shortcut: 'Ctrl+Enter', action: () => handleScan() },
+  { id: 'scan_project', title: 'Run Project Scan (All Files)', icon: '⚡', shortcut: '', action: () => handleScanAllFolder() },
+  { id: 'next_vuln', title: 'Next Vulnerability Finding', icon: '▶', shortcut: 'F8', action: () => navigateNextFinding() },
+  { id: 'prev_vuln', title: 'Previous Vulnerability Finding', icon: '◀', shortcut: 'Shift+F8', action: () => navigatePrevFinding() },
+  { id: 'apply_fix', title: 'Apply Quick Fix for Active Issue', icon: '🛠️', shortcut: '', action: () => applyFixToEditor() },
+  { id: 'undo_fix', title: 'Undo Last Applied Fix', icon: '↩', shortcut: '', action: () => undoFixInEditor() },
+  { id: 'toggle_sidebar', title: 'Toggle Primary Sidebar', icon: '📁', shortcut: 'Ctrl+B', action: () => togglePrimarySidebar() },
+  { id: 'view_explorer', title: 'View: Show Explorer', icon: '📁', shortcut: 'Ctrl+Shift+E', action: () => switchSidebarView('explorer') },
+  { id: 'view_findings', title: 'View: Show Findings', icon: '🛡️', shortcut: 'Ctrl+Shift+F', action: () => switchSidebarView('findings') },
+  { id: 'view_scan', title: 'View: Show Scan Engine & Pipeline', icon: '⚡', shortcut: '', action: () => switchSidebarView('scan') },
+  { id: 'view_risk', title: 'View: Show Project Risk & Security Gate', icon: '📊', shortcut: '', action: () => switchSidebarView('risk') },
+  { id: 'toggle_drawer', title: 'Toggle Vulnerability Inspector Drawer', icon: '📋', shortcut: '', action: () => toggleSecondaryDrawer() },
+  { id: 'toggle_problems', title: 'Toggle Problems Panel', icon: '⚠️', shortcut: '', action: () => toggleProblemsPanel() },
+  { id: 'config_api', title: 'Settings: Configure AI API Keys', icon: '🔑', shortcut: '', action: () => openApiKeyModalBtn.click() },
+  { id: 'export_code', title: 'Export Current Source Code File', icon: '💾', shortcut: '', action: () => exportCodeBtn.click() },
+  { id: 'export_report', title: 'Export Security Audit Report (Markdown)', icon: '📄', shortcut: '', action: () => exportSecurityReport() }
+];
+
+let filteredCommands = [];
+let paletteSelectedIndex = 0;
+
+function openCommandPalette() {
+  const modal = document.getElementById('commandPaletteModal');
+  const input = document.getElementById('paletteSearchInput');
+  if (!modal || !input) return;
+  modal.style.display = 'flex';
+  input.value = '';
+  input.focus();
+  renderPaletteCommands('');
+}
+
+function closeCommandPalette() {
+  const modal = document.getElementById('commandPaletteModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function renderPaletteCommands(query = '') {
+  const list = document.getElementById('paletteResultsList');
+  if (!list) return;
+  const q = query.trim().toLowerCase();
+  filteredCommands = COMMANDS.filter(c => !q || c.title.toLowerCase().includes(q) || c.id.includes(q));
+  paletteSelectedIndex = 0;
+
+  if (filteredCommands.length === 0) {
+    list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:0.8rem;">Không tìm thấy lệnh phù hợp</div>';
+    return;
+  }
+
+  list.innerHTML = filteredCommands.map((c, idx) => `
+    <div class="palette-item ${idx === 0 ? 'active' : ''}" data-idx="${idx}">
+      <div class="palette-item-left">
+        <span>${c.icon}</span>
+        <span>${escapeHtml(c.title)}</span>
+      </div>
+      ${c.shortcut ? `<span class="palette-item-shortcut">${escapeHtml(c.shortcut)}</span>` : ''}
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.palette-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const idx = Number.parseInt(item.getAttribute('data-idx'), 10);
+      executePaletteCommand(idx);
+    });
+  });
+}
+
+function executePaletteCommand(idx) {
+  if (idx >= 0 && idx < filteredCommands.length) {
+    const cmd = filteredCommands[idx];
+    closeCommandPalette();
+    try {
+      cmd.action();
+    } catch (err) {
+      console.error('Lỗi khi thực thi lệnh:', err);
+    }
+  }
+}
+
+function toggleProblemsPanel() {
+  if (problemsPanel) {
+    problemsPanel.classList.toggle('collapsed');
+    if (isMonacoLoaded && monacoInstance) {
+      setTimeout(() => monacoInstance.layout(), 220);
+    }
+  }
+}
+
+// Attach All AppSec Studio IDE Listeners
+function setupAppSecStudioListeners() {
+  loadVulnStates();
+
+  // Activity Bar Switcher
+  document.querySelectorAll('.activity-btn[data-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      switchSidebarView(btn.dataset.view);
+    });
+  });
+
+  // Sidebar toggles
+  document.getElementById('togglePrimarySidebarBtn')?.addEventListener('click', () => togglePrimarySidebar());
+  document.getElementById('sidebarCollapseBtn')?.addEventListener('click', () => togglePrimarySidebar(true));
+  document.getElementById('breadcrumbToggleSidebarBtn')?.addEventListener('click', () => togglePrimarySidebar());
+
+  // Drawer toggles
+  document.getElementById('toggleDrawerBtn')?.addEventListener('click', () => toggleSecondaryDrawer());
+  document.getElementById('closeDrawerBtn')?.addEventListener('click', () => toggleSecondaryDrawer(true));
+
+  // Drawer tabs
+  document.querySelectorAll('.drawer-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      switchDrawerTab(tab.dataset.pane);
+    });
+  });
+
+  // Drawer Jump To Code button
+  document.getElementById('drawerJumpToCodeBtn')?.addEventListener('click', () => {
+    if (activeFindingIndex >= 0 && activeFindingList[activeFindingIndex]) {
+      revealVulnerabilityInEditor(activeFindingList[activeFindingIndex]);
+    }
+  });
+
+  // Drawer State Change Selector
+  const drawerStateSelect = document.getElementById('drawerStateSelect');
+  if (drawerStateSelect) {
+    drawerStateSelect.addEventListener('change', (e) => {
+      if (activeFindingIndex < 0 || !activeFindingList[activeFindingIndex]) return;
+      const v = activeFindingList[activeFindingIndex];
+      const filePath = (activeFileIndex >= 0 && uploadedFiles[activeFileIndex]?.path) || 'Mã nguồn hiện tại';
+      const newState = e.target.value;
+
+      if (newState === 'ignored' || newState === 'false_positive' || newState === 'accepted_risk') {
+        pendingIgnoreFinding = { v, filePath, state: newState };
+        const modal = document.getElementById('ignoreReasonModal');
+        if (modal) modal.style.display = 'flex';
+      } else {
+        setFindingState(v, filePath, newState);
+      }
+    });
+  }
+
+  // Ignore Modal Actions
+  const ignoreModal = document.getElementById('ignoreReasonModal');
+  const closeIgnoreModal = () => {
+    if (ignoreModal) ignoreModal.style.display = 'none';
+    pendingIgnoreFinding = null;
+  };
+
+  document.getElementById('closeIgnoreModalBtn')?.addEventListener('click', closeIgnoreModal);
+  document.getElementById('cancelIgnoreBtn')?.addEventListener('click', () => {
+    if (pendingIgnoreFinding && drawerStateSelect) {
+      drawerStateSelect.value = getFindingState(pendingIgnoreFinding.v, pendingIgnoreFinding.filePath);
+    }
+    closeIgnoreModal();
+  });
+
+  document.getElementById('confirmIgnoreBtn')?.addEventListener('click', () => {
+    if (pendingIgnoreFinding) {
+      const reason = document.getElementById('ignoreReasonSelect')?.value || 'accepted_risk';
+      const notes = document.getElementById('ignoreNotesInput')?.value || '';
+      setFindingState(pendingIgnoreFinding.v, pendingIgnoreFinding.filePath, pendingIgnoreFinding.state, reason, notes);
+    }
+    closeIgnoreModal();
+  });
+
+  // Quick Fix Buttons
+  document.getElementById('btnApplyFix')?.addEventListener('click', applyFixToEditor);
+  document.getElementById('btnUndoFix')?.addEventListener('click', undoFixInEditor);
+  document.getElementById('btnCreatePr')?.addEventListener('click', createPullRequestPatch);
+
+  // F8 Navigation buttons
+  document.getElementById('btnNextFinding')?.addEventListener('click', navigateNextFinding);
+  document.getElementById('btnPrevFinding')?.addEventListener('click', navigatePrevFinding);
+
+  // Findings Filters
+  document.getElementById('chkFilterOpen')?.addEventListener('change', updateFindingsUI);
+  document.getElementById('chkFilterFixed')?.addEventListener('change', updateFindingsUI);
+  document.getElementById('chkFilterIgnored')?.addEventListener('change', updateFindingsUI);
+
+  document.querySelectorAll('.sev-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.sev-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      findingFilterSev = chip.dataset.sev || 'all';
+      updateFindingsUI();
+    });
+  });
+
+  const findingSearch = document.getElementById('findingSearchInput');
+  if (findingSearch) {
+    findingSearch.addEventListener('input', (e) => {
+      findingSearchQuery = e.target.value;
+      updateFindingsUI();
+    });
+  }
+
+  // Scope & Scan triggers
+  const sidebarRunScanBtn = document.getElementById('sidebarRunScanBtn');
+  if (sidebarRunScanBtn) {
+    sidebarRunScanBtn.addEventListener('click', () => {
+      const scope = document.querySelector('input[name="scanScopeRadio"]:checked')?.value || 'file';
+      if (scope === 'project') {
+        handleScanAllFolder();
+      } else if (scope === 'git') {
+        openGitModalBtn?.click();
+      } else {
+        handleScan();
+      }
+    });
+  }
+
+  document.querySelectorAll('input[name="scanScopeRadio"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const badge = document.getElementById('editorScopeBadge');
+      if (badge) {
+        badge.textContent = (e.target.value === 'project') ? '📁 Project Scope' : ((e.target.value === 'git') ? '🔗 Git Scope' : '📄 File Scope');
+      }
+    });
+  });
+
+  // Problems panel toggle
+  document.getElementById('toggleProblemsBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleProblemsPanel();
+  });
+  document.getElementById('problemsPanelHeader')?.addEventListener('click', () => {
+    toggleProblemsPanel();
+  });
+
+  // Settings view shortcut to API Modal
+  document.getElementById('sidebarApiKeyBtn')?.addEventListener('click', () => {
+    openApiKeyModalBtn?.click();
+  });
+
+  // Command Palette open button
+  document.getElementById('openCommandPaletteBtn')?.addEventListener('click', openCommandPalette);
+
+  // Command Palette Input Events
+  const paletteInput = document.getElementById('paletteSearchInput');
+  if (paletteInput) {
+    paletteInput.addEventListener('input', (e) => {
+      renderPaletteCommands(e.target.value);
+    });
+
+    paletteInput.addEventListener('keydown', (e) => {
+      const items = document.querySelectorAll('.palette-item');
+      if (!items.length) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        paletteSelectedIndex = (paletteSelectedIndex + 1) % items.length;
+        items.forEach((it, i) => it.classList.toggle('active', i === paletteSelectedIndex));
+        items[paletteSelectedIndex]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        paletteSelectedIndex = (paletteSelectedIndex - 1 + items.length) % items.length;
+        items.forEach((it, i) => it.classList.toggle('active', i === paletteSelectedIndex));
+        items[paletteSelectedIndex]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        executePaletteCommand(paletteSelectedIndex);
+      } else if (e.key === 'Escape') {
+        closeCommandPalette();
+      }
+    });
+  }
+
+  // Global Keyboard Shortcuts
+  document.addEventListener('keydown', (e) => {
+    // F8: Next Finding
+    if (e.key === 'F8') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        navigatePrevFinding();
+      } else {
+        navigateNextFinding();
+      }
+      return;
+    }
+
+    // Ctrl + B: Toggle Sidebar
+    if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
+      e.preventDefault();
+      togglePrimarySidebar();
+      return;
+    }
+
+    // Ctrl + Shift + P or F1: Command Palette
+    if ((e.ctrlKey && e.shiftKey && (e.key === 'p' || e.key === 'P')) || e.key === 'F1') {
+      e.preventDefault();
+      openCommandPalette();
+      return;
+    }
+
+    // Ctrl + Shift + E: Explorer View
+    if (e.ctrlKey && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+      e.preventDefault();
+      switchSidebarView('explorer');
+      return;
+    }
+
+    // Ctrl + Shift + F: Findings View
+    if (e.ctrlKey && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      switchSidebarView('findings');
+      return;
+    }
+
+    // Escape: Close modals
+    if (e.key === 'Escape') {
+      closeCommandPalette();
+      closeIgnoreModal();
+    }
+  });
+
+  // Modal backdrop clicks
+  document.getElementById('commandPaletteModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'commandPaletteModal') closeCommandPalette();
+  });
+  document.getElementById('ignoreReasonModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'ignoreReasonModal') closeIgnoreModal();
+  });
+}
+
+// Auto-invoke setupAppSecStudioListeners on window load or DOMContentLoaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupAppSecStudioListeners);
+} else {
+  setupAppSecStudioListeners();
+}
+
