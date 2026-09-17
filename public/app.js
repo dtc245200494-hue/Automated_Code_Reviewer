@@ -637,11 +637,17 @@ async function handleFilesSelected(fileList) {
   if (!filesArray.length) return;
 
   const filtered = filesArray.filter(f => {
-    const p = f.webkitRelativePath || f.name;
-    if (p.includes('node_modules/') || p.includes('.git/') || p.includes('dist/') || p.includes('.idea/')) {
+    const p = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+    if (p.includes('/node_modules/') || p.startsWith('node_modules/') ||
+        p.includes('/.git/') || p.startsWith('.git/') ||
+        p.includes('/dist/') || p.startsWith('dist/') ||
+        p.includes('/build/') || p.startsWith('build/') ||
+        p.includes('/.idea/') || p.startsWith('.idea/')) {
       return false;
     }
-    const ext = f.name.split('.').pop().toLowerCase();
+    const parts = f.name.split('.');
+    if (parts.length < 2) return false;
+    const ext = parts.pop().toLowerCase();
     return CODE_EXTENSIONS.has(ext);
   });
 
@@ -652,26 +658,43 @@ async function handleFilesSelected(fileList) {
 
   uploadedFiles = [];
   for (const file of filtered) {
-    const content = await file.text();
-    const ext = file.name.split('.').pop().toLowerCase();
-    const lang = EXT_TO_LANG[ext] || 'auto';
-    uploadedFiles.push({
-      name: file.name,
-      path: file.webkitRelativePath || file.name,
-      content,
-      language: lang,
-      result: null
-    });
+    try {
+      const content = await file.text();
+      const ext = file.name.split('.').pop().toLowerCase();
+      const lang = EXT_TO_LANG[ext] || 'auto';
+      uploadedFiles.push({
+        name: file.name,
+        path: (file.webkitRelativePath || file.name).replace(/\\/g, '/'),
+        content,
+        language: lang,
+        result: null
+      });
+    } catch (err) {
+      console.warn('Không thể đọc nội dung file:', file.name, err);
+    }
+  }
+
+  if (uploadedFiles.length === 0) {
+    alert('Không thể nạp nội dung của các file đã chọn.');
+    return;
   }
 
   setupFolderView(`${uploadedFiles.length} file`);
 }
 
 function setupFolderView(badgeText) {
-  fileCountBadge.textContent = badgeText;
-  folderSidebar.style.display = 'flex';
-  mainLayout.classList.add('has-sidebar');
-  tabSummaryView.style.display = 'flex';
+  if (fileCountBadge) fileCountBadge.textContent = badgeText;
+  if (folderSidebar) folderSidebar.style.display = 'flex';
+  if (mainLayout) mainLayout.classList.add('has-sidebar');
+  if (tabSummaryView) tabSummaryView.style.display = 'flex';
+
+  // Chuyển ngay sang Explorer tab và mở sidebar nếu đang đóng
+  if (typeof switchSidebarView === 'function') {
+    switchSidebarView('explorer');
+  }
+  if (typeof togglePrimarySidebar === 'function') {
+    togglePrimarySidebar(false);
+  }
 
   renderFileTree();
   selectUploadedFile(0);
@@ -808,23 +831,38 @@ function setupEventListeners() {
     setEditorCode('', 'javascript');
     uploadedFiles = [];
     activeFileIndex = -1;
-    folderSidebar.style.display = 'none';
-    mainLayout.classList.remove('has-sidebar');
-    tabSummaryView.style.display = 'none';
-    currentFileTitle.textContent = 'Mã nguồn cần quét';
+    if (folderSidebar) folderSidebar.style.display = 'none';
+    if (mainLayout) mainLayout.classList.remove('has-sidebar');
+    if (tabSummaryView) tabSummaryView.style.display = 'none';
+    if (fileCountBadge) fileCountBadge.textContent = '0 file';
+    if (currentFileTitle) currentFileTitle.textContent = 'Mã nguồn cần quét';
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    renderFileTree();
     switchViewTab('detail');
     resetResults();
   });
 
-  fileInput.addEventListener('change', (e) => {
-    handleFilesSelected(e.target.files);
+  // Nút bấm kích hoạt mở File / Thư mục dự án
+  document.getElementById('btnTriggerFileUpload')?.addEventListener('click', () => {
     fileInput.value = '';
+    fileInput.click();
+  });
+
+  document.getElementById('btnTriggerFolderUpload')?.addEventListener('click', () => {
+    folderInput.value = '';
+    folderInput.click();
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFilesSelected(e.target.files);
+    }
   });
 
   folderInput.addEventListener('change', (e) => {
-    handleFilesSelected(e.target.files);
-    folderInput.value = '';
+    if (e.target.files && e.target.files.length > 0) {
+      handleFilesSelected(e.target.files);
+    }
   });
 
   scanBtn.addEventListener('click', handleScan);
