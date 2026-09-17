@@ -517,7 +517,7 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       if (!/(innerHTML|outerHTML|insertAdjacentHTML|document\.write)/.test(line)) return false;
       if (/DOMPurify\.sanitize|sanitizeHtml|escapeHtml/i.test(line)) return false;
       if (/(innerHTML|outerHTML)\s*=\s*["'`][^$`]*["'`]\s*;?\s*$/.test(line)) return false;
-      return /(\$\{|\+\s*\w+|\b(user|input|query|param|bio|name|message|content)\b)/i.test(line);
+      return /(\$\{|\+\s*\w+|\b(?:user|input|query|param|bio|name|message|content)[A-Za-z0-9_$]*\b)/i.test(line);
     });
 
     if (!isPureHtml && xssLineIdx >= 0) {
