@@ -346,7 +346,7 @@ export class ScannerService {
 
   getDefaultModel(provider, firstKey = '') {
     if (provider === 'cerebras') return 'gpt-oss-120b';
-    if (provider === 'gemini' || firstKey.startsWith('AIzaSy')) return 'gemini-1.5-flash';
+    if (provider === 'gemini' || firstKey.startsWith('AIzaSy')) return 'gemini-3.8-flash';
     if (provider === 'deepseek') return 'deepseek-chat';
     if (provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
     if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'llama-3.3-70b-versatile';
