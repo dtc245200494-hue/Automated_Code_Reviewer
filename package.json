@@ -5,8 +5,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node --no-deprecation server.js",
+    "dev": "node --no-deprecation --watch server.js",
     "test": "node --check server.js && node --check public/app.js && node --check public/custom-provider.js && node --check public/opencode-models.js && node --check services/universal-ai.js && node --check services/opencode-models.js && node --test test/*.test.js"
   },
   "dependencies": {

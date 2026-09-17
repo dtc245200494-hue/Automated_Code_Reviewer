@@ -288,6 +288,6 @@ app.listen(PORT, () => {
   console.log('====================================================');
   console.log('🛡️  AI SECURITY BOT - WEB APPLICATION ĐÃ KHỞI CHẠY');
   console.log(`🌐  Truy cập giao diện: http://localhost:${PORT}`);
-  console.log(`🔑  Trạng thái AI Key: ${scannerService.hasApiKey() ? 'ĐÃ KẾT NỐI' : 'CHƯA CẤU HÌNH (dùng Heuristic Mode)'}`);
+  console.log(`🔑  Trạng thái AI Key: ${scannerService.hasApiKey() ? `ĐÃ KẾT NỐI (${scannerService.provider} - ${scannerService.model})` : 'CHƯA CẤU HÌNH (dùng Heuristic Mode)'}`);
   console.log('====================================================');
 });

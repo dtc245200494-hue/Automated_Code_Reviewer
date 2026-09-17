@@ -88,6 +88,8 @@ async function mapWithConcurrency(items, concurrency, worker) {
   return results;
 }
 
+export const DEFAULT_OPENCODE_API_KEY = 'sk-PtTVvzUMtFeHt04GwX5DNH9la9Jv6j7Es6KjdadWkqTfRrA9Aho3SMHfyitBWR5O';
+
 export class ScannerService {
   constructor() {
     const rawProvider = (process.env.AI_PROVIDER || '').trim().toLowerCase();
@@ -113,6 +115,9 @@ export class ScannerService {
       chosenProvider = 'github';
     } else if (envKey) {
       chosenProvider = 'openai';
+    } else if (process.env.NO_DEFAULT_KEY !== 'true') {
+      // Mặc định nạp key OpenCode có sẵn nếu chưa đặt biến môi trường
+      chosenProvider = 'opencode';
     }
 
     this.isOpenCode = chosenProvider === 'opencode';
@@ -120,7 +125,7 @@ export class ScannerService {
     this.isOpenAI = chosenProvider === 'openai';
 
     if (this.isOpenCode) {
-      this.apiKey = opencodeEnvKey || envKey;
+      this.apiKey = opencodeEnvKey || envKey || (process.env.NO_DEFAULT_KEY === 'true' ? '' : DEFAULT_OPENCODE_API_KEY);
       this.model = process.env.MODEL || 'deepseek-v4-flash-free';
       this.provider = 'OpenCode.ai';
       this.client = this.apiKey ? new OpenAI({
