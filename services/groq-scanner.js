@@ -1,4 +1,5 @@
 import { ScannerService as BaseScannerService, DEFAULT_OPENCODE_API_KEY } from './scanner.js';
+import { scanSensitiveData } from './sensitive-data-scanner.js';
 
 export { DEFAULT_OPENCODE_API_KEY };
 
@@ -119,12 +120,17 @@ function retryAfterMs(err) {
 
 const RISK_PATTERNS = [
   { risk: 100, type: 'command-injection', regex: /\b(exec|execSync|spawn|spawnSync|popen|system)\s*\(.*(req\.|params|query|input|\+|\$\{)/i },
+  { risk: 95, type: 'sensitive-credential', regex: /\b(proxy[_-]?pass|db[_-]?pass|password|passwd|pass)\b\s*[:=]\s*["'`]([^"'`]+)["'`]|"pass"\s*:\s*"[^"]+"/i },
   { risk: 92, type: 'sql-injection', regex: /\b(select|insert|update|delete|drop|union|alter)\b.*(\+|\$\{)|(?:\+|\$\{).*\b(select|from|where|into)\b/i },
+  { risk: 90, type: 'session-token', regex: /\b(PHPSESSID|JSESSIONID|aws-waf-token|AWSALB|_pat|_prt)\b/i },
   { risk: 88, type: 'code-execution', regex: /\b(eval|Function)\s*\(/i },
   { risk: 86, type: 'hardcoded-secret', regex: /\b(api[_-]?key|secret(?:[_-]?key)?|password|passwd|token|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i },
+  { risk: 84, type: 'jwt-token', regex: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/ },
   { risk: 80, type: 'path-traversal', regex: /(send_file|sendFile|readFile|createReadStream|openSync|path\.join|os\.path\.join)\s*\(.*(req\.|params|query|filename|input)/i },
   { risk: 78, type: 'ssrf', regex: /\b(fetch|axios|request|http\.get|https\.get)\s*\(.*(req\.|params|query|url|target)/i },
+  { risk: 75, type: 'sensitive-cookie-flag', regex: /"(secure|httpOnly)"\s*:\s*false/i },
   { risk: 72, type: 'dom-xss', regex: /(innerHTML|outerHTML|insertAdjacentHTML|document\.write|dangerouslySetInnerHTML)/i },
+  { risk: 70, type: 'browser-history-data', regex: /"historyGz"\s*:\s*"[^"]{20,}"/i },
   { risk: 66, type: 'jwt-misuse', regex: /jwt\.decode\s*\(/i },
   { risk: 60, type: 'weak-crypto', regex: /\b(createCipher|md5|sha1|des)\b/i }
 ];
@@ -427,8 +433,13 @@ export class ScannerService extends BaseScannerService {
     if (totalLines <= SINGLE_REQUEST_MAX_LINES) {
       try {
         const parsed = await this.requestAi(clientPool[0], activeModel, this.generateSecurityPrompt(code, language));
+        const sensitiveFindings = scanSensitiveData(code, language);
+        const allVulns = dedupeVulnerabilities([...(parsed.vulnerabilities || []), ...sensitiveFindings]);
+        const isSafe = allVulns.length === 0;
         return {
           ...parsed,
+          is_safe: isSafe,
+          vulnerabilities: allVulns,
           incomplete: false,
           scan_status: 'complete',
           source: 'ai_live',
@@ -524,7 +535,11 @@ export class ScannerService extends BaseScannerService {
     const processed = chunkResults.filter(Boolean);
     const successful = processed.filter(item => item.ok);
     const failed = processed.filter(item => !item.ok);
-    const aggregatedVulns = dedupeVulnerabilities(successful.flatMap(item => item.vulnerabilities || []));
+    const sensitiveFindings = scanSensitiveData(code, language);
+    const aggregatedVulns = dedupeVulnerabilities([
+      ...successful.flatMap(item => item.vulnerabilities || []),
+      ...sensitiveFindings
+    ]);
     const recommendations = normalizeRecommendations(successful.flatMap(item => item.recommendations || []));
     const incomplete = failed.length > 0 || circuitBroken || successful.length < chunks.length;
     const actualCovered = countCoveredLines(successful, totalLines);

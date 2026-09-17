@@ -7,6 +7,7 @@
  * See LICENSE file in the project root for full license information.
  */
 import { OpenAI, AzureOpenAI } from 'openai';
+import { scanSensitiveData } from './sensitive-data-scanner.js';
 
 export const SINGLE_REQUEST_MAX_LINES = Number.parseInt(process.env.SCAN_SINGLE_LIMIT || '500', 10);
 export const CHUNK_SIZE = Number.parseInt(process.env.SCAN_CHUNK_SIZE || '600', 10);
@@ -346,7 +347,7 @@ export class ScannerService {
 
   getDefaultModel(provider, firstKey = '') {
     if (provider === 'cerebras') return 'gpt-oss-120b';
-    if (provider === 'gemini' || firstKey.startsWith('AIzaSy') || firstKey.startsWith('AQ.')) return 'gemini-3.5-flash-lite';
+    if (provider === 'gemini' || firstKey.startsWith('AIzaSy') || firstKey.startsWith('AQ.')) return 'gemini-2.5-flash-lite';
     if (provider === 'deepseek') return 'deepseek-chat';
     if (provider === 'openrouter') return 'meta-llama/llama-3.3-70b-instruct:free';
     if (provider === 'groq' || firstKey.startsWith('gsk_')) return 'llama-3.3-70b-versatile';
@@ -465,6 +466,12 @@ QUY TẮC RÀ SOÁT BẢO MẬT:
 - SQL có placeholder (?, $1, :name, %s) và được truyền tham số riêng KHÔNG PHẢI SQL Injection.
 - Chỉ báo DOM XSS khi dữ liệu động không tin cậy đi vào innerHTML/outerHTML/insertAdjacentHTML/document.write mà không sanitize/escape.
 - Chỉ báo Hardcoded Secret khi có credential thực được gán literal; bỏ qua biến môi trường (process.env, os.getenv), placeholder ("your-api-key"), example/mock/test value.
+- RÀ SOÁT DỮ LIỆU & FILE CẤU HÌNH (JSON, YAML, ENV, PROFILE EXPORTS):
+  + Bắt buộc phát hiện mật khẩu/credential lưu dạng plaintext (ví dụ: proxy "user"/"pass", db password) -> Báo "Sensitive Credential Stored in Plaintext" (Mức Cao, CWE-256).
+  + Bắt buộc phát hiện token xác thực/session lưu lộ thiên (JWT eyJ..., PHPSESSID, JSESSIONID, aws-waf-token, AWSALB, _pat, _prt) -> Báo "Authentication / Session Token Exposed in Data File" (Mức Cao, CWE-522/CWE-200).
+  + Bắt buộc phát hiện cookie phiên thiếu cờ bảo vệ (secure: false, httpOnly: false) -> Báo "Session Cookie Missing Secure / HttpOnly Protection" (Mức Cao, CWE-614/CWE-1004).
+  + Bắt buộc phát hiện dữ liệu nhạy cảm lưu không mã hóa (historyGz, vị trí geo) -> Báo "Sensitive Browser/Profile Data Persisted" (Mức Trung bình, CWE-359).
+  + KHÔNG ĐƯỢC kết luận file an toàn (is_safe: false) nếu phát hiện bất kỳ dữ liệu nhạy cảm nào ở trên.
 - start_line và end_line phải đúng theo chỉ số [L...] bao trọn toàn bộ phạm vi dòng code bị ảnh hưởng.
 
 Trả về JSON duy nhất:
@@ -632,8 +639,13 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
       const prompt = this.generateSecurityPrompt(code, language);
       try {
         const parsed = await this.requestAi(clientPool[0], activeModel, prompt);
+        const sensitiveFindings = scanSensitiveData(code, language);
+        const allVulns = dedupeVulnerabilities([...(parsed.vulnerabilities || []), ...sensitiveFindings]);
+        const isSafe = allVulns.length === 0;
         return {
           ...parsed,
+          is_safe: isSafe,
+          vulnerabilities: allVulns,
           incomplete: false,
           scan_status: 'complete',
           source: 'ai_live',
@@ -728,9 +740,11 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
 
     const processedResults = chunkResults.filter(Boolean);
     const failedChunks = processedResults.filter(result => !result.ok);
-    const aggregatedVulns = dedupeVulnerabilities(
-      processedResults.flatMap(result => result.vulnerabilities || [])
-    );
+    const sensitiveFindings = scanSensitiveData(code, language);
+    const aggregatedVulns = dedupeVulnerabilities([
+      ...processedResults.flatMap(result => result.vulnerabilities || []),
+      ...sensitiveFindings
+    ]);
     const uniqueRecs = normalizeRecommendations(
       processedResults.flatMap(result => result.recommendations || [])
     );
@@ -789,6 +803,10 @@ ${chunkLines.map((line, i) => `[L${startLineNumber + i}] ${line}`).join('\n')}
     const codeLower = code.toLowerCase();
     const lines = code.split('\n');
     const vulnerabilities = [];
+
+    // Luôn kích hoạt kiểm tra dữ liệu nhạy cảm / Secrets / Tokens trong file
+    const sensitiveFindings = scanSensitiveData(code, language);
+    vulnerabilities.push(...sensitiveFindings);
 
     const isPureHtml = language === 'html'
       || codeLower.startsWith('<!doctype html')
